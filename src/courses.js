@@ -74,8 +74,10 @@ export function defineCourses(W, V, D) {
       cur = best;
       out.push(best);
     }
-    const loop = out.concat(out.slice(0, -1).reverse().slice(1)).concat([out[0]]);
-    for (const q of loop) race.push(ground(q[0], q[1]));
+    if (out.length >= 3) {
+      const loop = out.concat(out.slice(0, -1).reverse().slice(1)).concat([out[0]]);
+      for (const q of loop) race.push(ground(q[0], q[1]));
+    }
   }
 
   // Seaplane: take off, thread under the bridge deck, round the far anchorage, over the clock tower, splash down.
