@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildWorld, BRIDGE } from './world.js';
-import { Player } from './player.js';
+import { Player, LOOKS, SKIN_TONES } from './player.js';
 import { CameraRig } from './camera.js';
 import { Input } from './input.js';
 import { Hud, fmtTime } from './hud.js';
@@ -15,6 +15,7 @@ import { Sky } from './sky.js';
 import { Traffic, Gulls } from './life.js';
 import { Minimap } from './minimap.js';
 import { placeParcels, Parcels } from './parcels.js';
+import { Details } from './details.js';
 
 const $ = (s) => document.querySelector(s);
 const canvas = $('#game');
@@ -102,6 +103,7 @@ setLoad(82, 'Stringing ziplines and parking cars');
 await nextFrame();
 
 const player = new Player(W.world, scene);
+player.setLook(S.look, S.skin);
 const rig = new CameraRig(camera, W.world);
 const input = new Input(canvas, $('#touch'));
 const hud = new Hud();
@@ -167,10 +169,35 @@ const V = { cars: [], plane: null, carStart: null, dock: null };
 const vehicles = () => (V.plane ? [...V.cars, V.plane] : V.cars);
 let driving = null;
 
+// ---------- life and street detail ----------
+const traffic = new Traffic(scene, map.roads, QUALITY[S.quality].traffic);
+setLoad(90, 'Planting trees and painting crosswalks');
+await nextFrame();
+const details = (() => {
+  const avoid = [];
+  const f = W.landmarks.ferry;
+  avoid.push([f.plaza[0], f.plaza[1], 22], [0, 0, 16]);
+  for (const c of V.cars) avoid.push([c.pos.x, c.pos.z, 4]);
+  if (V.dock) avoid.push([V.dock.shore.x, V.dock.shore.z, 8]);
+  for (const L of W.world.ladders) {
+    avoid.push([L.x + L.nx, L.z + L.nz, 2]);
+    avoid.push([L.x - L.nx * 2, L.z - L.nz * 2, 3]);
+  }
+  for (const Z of W.world.ziplines) avoid.push([Z.ax, Z.az, 3], [Z.bx, Z.bz, 4]);
+  // Keep the tallest roof clear: it's the Skyline Drop start.
+  let tall = null;
+  for (const b of W.buildings) if ((b.s.maxX - b.s.minX) * (b.s.maxZ - b.s.minZ) >= 600 && (!tall || b.s.y1 > tall.s.y1)) tall = b;
+  if (tall) avoid.push([tall.cx, tall.cz, Math.max(tall.s.maxX - tall.s.minX, tall.s.maxZ - tall.s.minZ)]);
+  return new Details(scene, W, map, {
+    avoid,
+    radius: QUALITY[S.quality].detailRadius,
+    trafficRoads: new Set(traffic.routes.map((r) => r.p)),
+  });
+})();
+
 const courses = defineCourses(W, V).map((c) => resolveCourse(c, W.world));
 
-// ---------- life, ghosts, parcels, minimap ----------
-const traffic = new Traffic(scene, map.roads, QUALITY[S.quality].traffic);
+// ---------- ghosts, parcels, minimap ----------
 const gullCentres = [[W.landmarks.ferry.face[0] * -120, W.landmarks.ferry.face[1] * -120]];
 for (const p of map.piers.slice(0, 6)) gullCentres.push([p[0][0], p[0][1]]);
 const gulls = new Gulls(scene, gullCentres);
@@ -213,6 +240,7 @@ function applySettings() {
   particles.density = q.particles;
   sky.fogBase = q.fogFar;
   traffic.setCount(q.traffic);
+  details.setRadius(q.detailRadius);
   input.sensitivity = 0.0024 * S.sensitivity;
   input.invertY = S.invertLook;
   rig.reduceMotion = S.reduceMotion;
@@ -443,7 +471,7 @@ function startFree() {
   input.enabled = true;
   hud.toast('Free roam', 1400);
   tip('move', isTouch ? 'Left side to run, right side to look. Push the stick all the way to sprint.' : 'WASD to run, mouse to look. Hold Shift to sprint.');
-  tip('parcels', `Lost parcels glow orange on rooftops, piers and the bridge. Find all ${parcels.total}.`);
+  tip('parcels', `Fog City postcards glow on rooftops, piers and the bridge. Find all ${parcels.total}.`);
   lockPointer();
 }
 
@@ -545,7 +573,34 @@ function renderMenu() {
     list.appendChild(li);
   });
   list.querySelectorAll('button.course').forEach((b) => b.addEventListener('click', () => startCourse(courses[+b.dataset.i])));
-  $('#parcel-count').textContent = `Parcels ${parcels.count} / ${parcels.total}`;
+  $('#parcel-count').textContent = `Postcards ${parcels.count} / ${parcels.total}`;
+  renderCharacter();
+}
+
+function renderCharacter() {
+  const chips = $('#look-chips');
+  chips.innerHTML = '';
+  for (const [id, L] of Object.entries(LOOKS)) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.id = 'look-' + id;
+    b.setAttribute('aria-pressed', String(S.look === id));
+    b.innerHTML = `<i style="background:#${L.top.toString(16).padStart(6, '0')}"></i>${L.label}`;
+    b.addEventListener('click', () => { S.look = id; saveSettings(S); player.setLook(S.look, S.skin); renderCharacter(); });
+    chips.appendChild(b);
+  }
+  const sw = $('#skin-swatches');
+  sw.innerHTML = '';
+  SKIN_TONES.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'swatch';
+    b.id = 'skin-' + i;
+    b.style.background = c;
+    b.setAttribute('aria-label', `Skin tone ${i + 1}`);
+    b.setAttribute('aria-pressed', String(S.skin === i));
+    b.addEventListener('click', () => { S.skin = i; saveSettings(S); player.setLook(S.look, S.skin); renderCharacter(); });
+    sw.appendChild(b);
+  });
 }
 
 $('#btn-free').addEventListener('click', startFree);
@@ -713,6 +768,7 @@ function frame(now) {
   traffic.update(dt);
   gulls.update(dt, elapsed);
   particles.update(dt);
+  details.update(state === 'menu' ? camera.position : (driving ? driving.pos : player.pos), sky.lights, elapsed);
 
   let speed3 = 0;
   if (state === 'menu') {
@@ -787,7 +843,7 @@ function frame(now) {
           store.set('parcels', [...parcels.collected]);
           sound.pickup();
           particles.confetti(focus.x, focus.y + 1.5, focus.z);
-          hud.toast(`Parcel ${parcels.count} / ${parcels.total} · ${parcels.spots[got][3]}`, 1800);
+          hud.toast(`Postcard ${parcels.count} / ${parcels.total} · ${parcels.spots[got][3]}`, 1800);
         }
       }
     }
@@ -888,5 +944,5 @@ requestAnimationFrame(frame);
 // Handy for testing from the console.
 window.__fcr = { sun,
   W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene, V,
-  enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
+  details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
 };

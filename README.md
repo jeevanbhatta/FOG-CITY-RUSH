@@ -1,8 +1,9 @@
 # Fog City Rush
 
-A browser game set on San Francisco's Embarcadero. You're a courier: run, wall-jump,
-wall-run, slide and mantle across rooftops, climb the orange service ladders, walk the
-Bay Bridge's main cable, and ride ziplines back down to the Ferry Building clock tower.
+A browser game set on San Francisco's Embarcadero. Run, wall-jump, wall-run, slide and
+mantle across rooftops, climb the orange service ladders, walk the Bay Bridge's main
+cable, and ride ziplines back down to the Ferry Building clock tower. Play as a courier,
+skater, tourist, techie or freerunner.
 You can also drive courier cars along The Embarcadero and fly a seaplane under the Bay Bridge.
 
 Built with [three.js](https://threejs.org) (loaded from jsDelivr) and plain ES modules, with no build step.
@@ -49,8 +50,16 @@ The ghost races you on your next attempt, and the results screen compares every 
 
 ## Free roam
 
-25 lost parcels are hidden on rooftops, pier ends, the bridge towers and cable, and the top of the skyline.
+25 Fog City postcards are hidden on rooftops, pier ends, the bridge towers and cable, and the top of the skyline.
 Nearby ones show on the minimap; your count is on the main menu.
+
+## Street detail
+
+Around 15,000 props are generated from OpenStreetMap furniture plus rules that fill the gaps. They're
+bucketed into 160 m chunks, and only chunks within a few hundred metres of you are drawn (420 m on
+High, 320 m on Medium, 220 m on Low). Repeated props share instanced meshes; markings, curbs,
+rails, awnings and parapets are merged into one mesh per chunk and built on demand. Trees, lamp
+posts, signals, bus shelters, parked cars, rooftop units and water towers have collision.
 
 ## Presentation
 
@@ -86,7 +95,8 @@ Map data © OpenStreetMap contributors, available under the Open Database Licens
 - `src/audio.js`, `src/particles.js`: synthesised sound and pooled particles
 - `src/sky.js`: sky dome and time-of-day cycle
 - `src/ghost.js`: best-run recording and ghost replay
-- `src/life.js`, `src/minimap.js`, `src/parcels.js`: traffic and gulls, the corner map, and collectibles
+- `src/life.js`, `src/minimap.js`, `src/parcels.js`: traffic and gulls, the corner map, and postcards
+- `src/details.js`: streamed street detail (OSM trees, lamps, signals, crossings, benches, bus stops, hydrants, tram tracks; generated lamps, trees, markings, curbs, parked cars, awnings, rooftop units, water towers, parapets)
 - `src/settings.js`: saved settings and quality presets
 - `src/camera.js`: third-person camera that avoids walls
 - `src/courses.js`: course definitions, rings and timing

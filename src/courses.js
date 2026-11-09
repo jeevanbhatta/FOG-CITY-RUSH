@@ -173,7 +173,7 @@ export function defineCourses(W, V) {
     },
     {
       id: 'race', name: 'Waterfront Grand Prix', difficulty: 'Medium', vehicle: 'car', ring: 2.6,
-      blurb: 'Courier car out along The Embarcadero toward the bridge and back.',
+      blurb: 'Race a car out along The Embarcadero toward the bridge and back.',
       points: race, start: plaza,
     },
     {

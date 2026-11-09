@@ -14,6 +14,8 @@ export function defaultSettings(isTouch) {
     invertFlight: false,
     reduceMotion: reduce,
     minimap: true,
+    look: 'courier',
+    skin: 2,
   };
 }
 
@@ -35,7 +37,7 @@ export function saveSettings(s) {
 
 // Renderer-facing values for each quality level.
 export const QUALITY = {
-  high: { shadows: true, shadowSize: 2048, pixelRatio: 1.75, outlines: true, particles: 1, fogFar: 1150, traffic: 28 },
-  medium: { shadows: true, shadowSize: 1024, pixelRatio: 1.25, outlines: false, particles: 0.7, fogFar: 950, traffic: 18 },
-  low: { shadows: false, shadowSize: 512, pixelRatio: 1, outlines: false, particles: 0.4, fogFar: 800, traffic: 10 },
+  high: { shadows: true, shadowSize: 2048, pixelRatio: 1.75, outlines: true, particles: 1, fogFar: 1150, traffic: 28, detailRadius: 420 },
+  medium: { shadows: true, shadowSize: 1024, pixelRatio: 1.25, outlines: false, particles: 0.7, fogFar: 950, traffic: 18, detailRadius: 320 },
+  low: { shadows: false, shadowSize: 512, pixelRatio: 1, outlines: false, particles: 0.4, fogFar: 800, traffic: 10, detailRadius: 220 },
 };

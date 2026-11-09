@@ -416,7 +416,7 @@ export function buildWorld(map, scene) {
   const fogBanks = addFogBanks(group, tex.puff, bounds);
 
   return {
-    world, group, landmarks, bounds, tex, mats, water, fogBanks, map, outlines,
+    world, group, landmarks, bounds, tex, mats, water, fogBanks, map, outlines, buildings: buildingSolids,
     setWindowLights(k) {
       mats.masonry.emissiveIntensity = k * 0.75;
       mats.glass.emissiveIntensity = k * 0.65;

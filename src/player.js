@@ -51,8 +51,17 @@ export class Player {
     this.events = []; // short strings the HUD can show ("Roll", "Wall jump"...)
     this.prompt = null;
     this.bounds = null;
+    this.scene = scene;
     this.avatar = new Avatar();
     scene.add(this.avatar.root);
+  }
+
+  setLook(look, skinTone) {
+    const visible = this.avatar.root.visible;
+    this.scene.remove(this.avatar.root);
+    this.avatar = new Avatar(look, skinTone);
+    this.avatar.root.visible = visible;
+    this.scene.add(this.avatar.root);
   }
 
   reset(p, facing = 0) {
@@ -543,23 +552,33 @@ export class Player {
 }
 
 // --- The courier: a small low-poly runner built from primitives ---
+// Character looks. Each preset sets clothes, headwear and what they carry.
+export const SKIN_TONES = ['#f1c6a6', '#d9a07a', '#c58c66', '#8d5a3b', '#5a3a28'];
+export const LOOKS = {
+  courier: { label: 'Courier', top: 0xe8552b, trim: 'reflect', pants: 0x2c3440, hat: 'cap', hatColor: 0x23303b, pack: 'courier', shoe: 0xf4f4f0, sole: 0xff6a2b, hair: 0x2a1d16 },
+  skater: { label: 'Skater', top: 0x3d5a80, pants: 0x8a8460, shorts: true, hat: 'beanie', hatColor: 0xd9a441, pack: 'none', shoe: 0x1b1f24, sole: 0xf4f4f0, hair: 0x5a3a20 },
+  tourist: { label: 'Tourist', top: 0x2aa198, pants: 0xd8c39a, shorts: true, hat: 'sunhat', hatColor: 0xe9dcc0, pack: 'none', camera: true, shoe: 0xf4f4f0, sole: 0x8a6a48, hair: 0x6b4a2a },
+  techie: { label: 'Techie', top: 0x6b6f73, pants: 0x34486b, hat: 'none', pack: 'backpack', glasses: true, shoe: 0xf4f4f0, sole: 0x1b1f24, hair: 0x1d1612 },
+  freerunner: { label: 'Freerunner', top: 0x1f3a2f, pants: 0x2b2b2b, bareArms: true, hat: 'headband', hatColor: 0xff6a2b, pack: 'none', shoe: 0xff6a2b, sole: 0xf4f4f0, hair: 0x2a1d16 },
+};
+
 export class Avatar {
-  constructor() {
+  constructor(look = 'courier', skinTone = 2) {
+    const L = LOOKS[look] || LOOKS.courier;
     const root = new THREE.Group();
     const M = (color, roughness = 0.75, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
-    const jacket = M(0xe8552b, 0.7);
-    const jacketDark = M(0xc4441f, 0.75);
-    const pants = M(0x2c3440, 0.85);
-    const skin = M(0xc58c66, 0.8);
-    const bag = M(0xf2efe6, 0.6);
-    const bagFlap = M(0xe0dacb, 0.65);
+    const top = M(L.top, 0.7);
+    const topDark = M(new THREE.Color(L.top).multiplyScalar(0.82), 0.75);
+    const pants = M(L.pants, 0.85);
+    const skin = M(SKIN_TONES[skinTone] || SKIN_TONES[2], 0.8);
     const dark = M(0x1b1f24, 0.6);
-    const capMat = M(0x23303b, 0.6);
-    const reflect = M(0xdfe6ea, 0.3, { metalness: 0.4, emissive: 0x30363a });
-    const shoe = M(0xf4f4f0, 0.6);
-    const sole = M(0xff6a2b, 0.6);
-    const hair = M(0x2a1d16, 0.9);
+    const hatMat = M(L.hatColor || 0x23303b, 0.6);
+    const trim = L.trim === 'reflect' ? M(0xdfe6ea, 0.3, { metalness: 0.4, emissive: 0x30363a }) : topDark;
+    const shoe = M(L.shoe, 0.6);
+    const sole = M(L.sole, 0.6);
+    const hair = M(L.hair, 0.9);
     const eyeMat = M(0x151515, 0.3);
+    const sleeve = L.bareArms ? skin : top;
 
     const mesh = (geo, mat, x, y, z, parent) => {
       const m = new THREE.Mesh(geo, mat);
@@ -576,25 +595,32 @@ export class Avatar {
     root.add(body);
     box(0.36, 0.2, 0.24, pants, 0, 0.02, 0, body);
     box(0.37, 0.05, 0.25, dark, 0, 0.12, 0, body); // belt
-    // Jacket: zip, collar, reflective band and a chest patch.
-    box(0.44, 0.5, 0.26, jacket, 0, 0.37, 0, body);
-    box(0.445, 0.05, 0.265, reflect, 0, 0.3, 0, body);
-    box(0.02, 0.44, 0.01, dark, 0, 0.38, 0.135, body);
-    box(0.3, 0.08, 0.24, jacketDark, 0, 0.64, 0, body);
-    box(0.08, 0.08, 0.01, reflect, -0.12, 0.5, 0.135, body);
-    // Backpack straps over the shoulders and down the chest.
-    for (const x of [-0.13, 0.13]) {
-      box(0.05, 0.42, 0.02, dark, x, 0.4, 0.137, body);
-      box(0.05, 0.03, 0.3, dark, x, 0.635, -0.02, body);
+    // Top: zip, collar, a band across the chest and a small patch.
+    box(0.44, 0.5, 0.26, top, 0, 0.37, 0, body);
+    box(0.445, 0.05, 0.265, trim, 0, 0.3, 0, body);
+    if (!L.bareArms) box(0.02, 0.44, 0.01, dark, 0, 0.38, 0.135, body);
+    box(0.3, 0.08, 0.24, topDark, 0, 0.64, 0, body);
+    box(0.08, 0.08, 0.01, trim, -0.12, 0.5, 0.135, body);
+    if (L.pack !== 'none') {
+      for (const x of [-0.13, 0.13]) {
+        box(0.05, 0.42, 0.02, dark, x, 0.4, 0.137, body);
+        box(0.05, 0.03, 0.3, dark, x, 0.635, -0.02, body);
+      }
+    }
+    if (L.camera) {
+      box(0.16, 0.1, 0.07, dark, 0.06, 0.45, 0.17, body);
+      mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.05, 10).rotateX(Math.PI / 2), M(0x30363a, 0.3), 0.06, 0.45, 0.22, body);
+      box(0.02, 0.3, 0.01, dark, -0.1, 0.55, 0.14, body);
     }
 
-    // Head: face, hair, cap.
+    // Head: face, hair, headwear.
     mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 8), skin, 0, 0.7, 0, body);
     const head = new THREE.Group();
     head.position.y = 0.86;
     body.add(head);
     mesh(new THREE.SphereGeometry(0.15, 16, 12), skin, 0, 0, 0, head).scale.set(1, 1.12, 1.02);
     mesh(new THREE.SphereGeometry(0.155, 16, 12), hair, 0, 0.01, -0.035, head).scale.set(1, 1.1, 1);
+    if (L.hat === 'none') mesh(new THREE.SphereGeometry(0.158, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42), hair, 0, 0.03, -0.01, head).scale.set(1.02, 1.1, 1.04);
     this.eyes = [];
     for (const x of [-0.055, 0.055]) {
       const e = mesh(new THREE.SphereGeometry(0.019, 8, 6), eyeMat, x, 0.02, 0.143, head);
@@ -603,30 +629,45 @@ export class Avatar {
     }
     box(0.03, 0.05, 0.03, skin, 0, -0.02, 0.158, head); // nose
     box(0.06, 0.012, 0.01, M(0x7a3f33, 0.7), 0, -0.075, 0.146, head); // mouth
-    const crown = mesh(new THREE.SphereGeometry(0.162, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), capMat, 0, 0.05, 0, head);
-    crown.scale.set(1.02, 0.85, 1.05);
-    const brim = box(0.21, 0.02, 0.14, capMat, 0, 0.065, 0.18, head);
-    brim.rotation.x = 0.12;
-    box(0.07, 0.05, 0.012, sole, 0, 0.12, 0.148, head); // cap logo
-    mesh(new THREE.SphereGeometry(0.022, 8, 6), sole, 0, 0.19, 0, head);
+    if (L.glasses) {
+      for (const x of [-0.055, 0.055]) box(0.06, 0.045, 0.012, M(0x111111, 0.2, { metalness: 0.3 }), x, 0.02, 0.158, head);
+      box(0.05, 0.01, 0.01, dark, 0, 0.03, 0.16, head);
+    }
+    if (L.hat === 'cap') {
+      const crown = mesh(new THREE.SphereGeometry(0.162, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), hatMat, 0, 0.05, 0, head);
+      crown.scale.set(1.02, 0.85, 1.05);
+      const brim = box(0.21, 0.02, 0.14, hatMat, 0, 0.065, 0.18, head);
+      brim.rotation.x = 0.12;
+      box(0.07, 0.05, 0.012, sole, 0, 0.12, 0.148, head);
+      mesh(new THREE.SphereGeometry(0.022, 8, 6), sole, 0, 0.19, 0, head);
+    } else if (L.hat === 'beanie') {
+      mesh(new THREE.SphereGeometry(0.165, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hatMat, 0, 0.04, 0, head).scale.set(1.02, 1.05, 1.04);
+      mesh(new THREE.CylinderGeometry(0.168, 0.168, 0.06, 16), M(new THREE.Color(L.hatColor).multiplyScalar(0.8), 0.8), 0, 0.05, 0, head);
+    } else if (L.hat === 'sunhat') {
+      mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.12, 16), hatMat, 0, 0.16, 0, head);
+      mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.015, 20), hatMat, 0, 0.1, 0, head);
+      mesh(new THREE.CylinderGeometry(0.162, 0.162, 0.03, 16), M(0x2a5a8a, 0.7), 0, 0.13, 0, head);
+    } else if (L.hat === 'headband') {
+      mesh(new THREE.CylinderGeometry(0.157, 0.157, 0.04, 16), hatMat, 0, 0.07, 0, head);
+    }
     this.head = head;
 
-    // Arms: shoulder pivot, elbow joint, cuff and glove.
+    // Arms: shoulder pivot, elbow joint, cuff and hand.
     const arm = (side) => {
       const pivot = new THREE.Group();
       pivot.position.set(side * 0.29, 0.56, 0);
       body.add(pivot);
-      box(0.15, 0.12, 0.18, jacket, 0, -0.02, 0, pivot);
-      capsule(0.065, 0.2, jacket, -0.16, pivot);
+      box(0.15, 0.12, 0.18, L.bareArms ? top : sleeve, 0, -0.02, 0, pivot);
+      capsule(0.065, 0.2, sleeve, -0.16, pivot);
       const elbow = new THREE.Group();
       elbow.position.y = -0.3;
       pivot.add(elbow);
-      capsule(0.058, 0.17, jacket, -0.12, elbow);
-      box(0.13, 0.05, 0.13, reflect, 0, -0.21, 0, elbow);
-      box(0.09, 0.11, 0.1, dark, 0, -0.29, 0.01, elbow);
+      capsule(0.058, 0.17, sleeve, -0.12, elbow);
+      if (!L.bareArms) box(0.13, 0.05, 0.13, trim, 0, -0.21, 0, elbow);
+      box(0.09, 0.11, 0.1, look === 'courier' ? dark : skin, 0, -0.29, 0.01, elbow);
       return { pivot, elbow };
     };
-    // Legs: hip pivot, knee joint, sneakers with orange soles.
+    // Legs: hip pivot, knee joint, shoes.
     const leg = (side) => {
       const pivot = new THREE.Group();
       pivot.position.set(side * 0.11, 0, 0);
@@ -635,8 +676,8 @@ export class Avatar {
       const knee = new THREE.Group();
       knee.position.y = -0.44;
       pivot.add(knee);
-      capsule(0.075, 0.25, pants, -0.2, knee);
-      box(0.15, 0.05, 0.15, dark, 0, -0.37, 0, knee); // cuff
+      capsule(0.075, 0.25, L.shorts ? skin : pants, -0.2, knee);
+      box(0.15, 0.05, 0.15, L.shorts ? M(0xf2f2ee, 0.9) : dark, 0, -0.37, 0, knee); // sock or cuff
       box(0.13, 0.09, 0.27, shoe, 0, -0.43, 0.05, knee);
       box(0.135, 0.03, 0.28, sole, 0, -0.485, 0.05, knee);
       return { pivot, knee };
@@ -647,14 +688,21 @@ export class Avatar {
     this.legL = lL.pivot; this.kneeL = lL.knee;
     this.legR = lR.pivot; this.kneeR = lR.knee;
 
-    // Courier backpack: body, flap, stripe, reflective patch.
-    const pack = new THREE.Group();
-    pack.position.set(0, 0.38, -0.25);
-    body.add(pack);
-    box(0.4, 0.46, 0.22, bag, 0, 0, 0, pack);
-    box(0.42, 0.14, 0.24, bagFlap, 0, 0.19, 0.0, pack);
-    box(0.41, 0.06, 0.225, jacket, 0, 0.04, 0, pack);
-    box(0.16, 0.08, 0.01, reflect, 0, -0.13, -0.112, pack);
+    if (L.pack === 'courier') {
+      const pack = new THREE.Group();
+      pack.position.set(0, 0.38, -0.25);
+      body.add(pack);
+      box(0.4, 0.46, 0.22, M(0xf2efe6, 0.6), 0, 0, 0, pack);
+      box(0.42, 0.14, 0.24, M(0xe0dacb, 0.65), 0, 0.19, 0.0, pack);
+      box(0.41, 0.06, 0.225, top, 0, 0.04, 0, pack);
+      box(0.16, 0.08, 0.01, trim, 0, -0.13, -0.112, pack);
+    } else if (L.pack === 'backpack') {
+      const pack = new THREE.Group();
+      pack.position.set(0, 0.36, -0.22);
+      body.add(pack);
+      mesh(new THREE.CapsuleGeometry(0.15, 0.2, 4, 10), M(0x22262a, 0.8), 0, 0, 0, pack).scale.set(1.15, 1, 0.65);
+      box(0.2, 0.14, 0.05, M(0x30353a, 0.8), 0, -0.08, -0.1, pack);
+    }
 
     // Parachute canopy: an arched ram-air wing in orange and white cells, with lines to the shoulders.
     const chute = new THREE.Group();

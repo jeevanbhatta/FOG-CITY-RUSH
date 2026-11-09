@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BRIDGE } from './world.js';
 
-// Lost parcels hidden around the city for free roam. Collected ones are remembered per browser.
+// Fog City postcards hidden around the city for free roam. Collected ones are remembered per browser.
 
 function rand(seed) {
   let s = seed >>> 0;
@@ -63,19 +63,28 @@ export class Parcels {
   constructor(scene, spots, collected) {
     this.spots = spots;
     this.collected = new Set(collected || []);
+    // A little painted postcard: fog over the bay, the bridge, a sun.
     const tex = (() => {
       const c = document.createElement('canvas');
-      c.width = c.height = 64;
+      c.width = 128; c.height = 88;
       const g = c.getContext('2d');
-      g.fillStyle = '#c98a4b'; g.fillRect(0, 0, 64, 64);
-      g.fillStyle = '#f2efe6'; g.fillRect(26, 0, 12, 64); g.fillRect(0, 26, 64, 12);
-      g.fillStyle = '#ff6a2b'; g.fillRect(4, 4, 14, 14);
+      g.fillStyle = '#f4efe2'; g.fillRect(0, 0, 128, 88);
+      const sky = g.createLinearGradient(0, 6, 0, 60);
+      sky.addColorStop(0, '#f2b880'); sky.addColorStop(1, '#e9d9c4');
+      g.fillStyle = sky; g.fillRect(6, 6, 116, 54);
+      g.fillStyle = '#ff6a2b'; g.beginPath(); g.arc(92, 26, 9, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#4b6c79'; g.fillRect(6, 46, 116, 14);
+      g.strokeStyle = '#1f3440'; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(30, 46); g.lineTo(30, 18); g.moveTo(80, 46); g.lineTo(80, 18); g.stroke();
+      g.lineWidth = 1.5; g.beginPath(); g.moveTo(6, 30); g.quadraticCurveTo(18, 40, 30, 18); g.quadraticCurveTo(55, 44, 80, 18); g.quadraticCurveTo(100, 40, 122, 32); g.stroke();
+      g.fillStyle = '#1f3440'; g.fillRect(6, 40, 116, 2);
+      g.font = 'bold 13px sans-serif'; g.fillText('FOG CITY', 10, 78);
       const t = new THREE.CanvasTexture(c);
       t.colorSpace = THREE.SRGBColorSpace;
       return t;
     })();
-    const geo = new THREE.BoxGeometry(0.7, 0.5, 0.7);
-    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7, emissive: 0x552200, emissiveIntensity: 0.4 });
+    const geo = new THREE.BoxGeometry(0.9, 0.62, 0.03);
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7, emissive: 0x553311, emissiveIntensity: 0.35 });
     const glowMat = new THREE.MeshBasicMaterial({ color: 0xff8a4b, transparent: true, opacity: 0.18, depthWrite: false });
     const glowGeo = new THREE.CylinderGeometry(0.9, 0.9, 6, 12, 1, true);
     glowGeo.translate(0, 3, 0);
