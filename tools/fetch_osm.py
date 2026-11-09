@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Download the raw Embarcadero OpenStreetMap extract from the Overpass API.
+
+Writes data/raw/embarcadero.osm.json. Run tools/build_map.py afterwards.
+Respects HTTPS_PROXY from the environment. Map data © OpenStreetMap contributors.
+"""
+import sys
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "data" / "raw" / "embarcadero.osm.json"
+ENDPOINT = "https://overpass-api.de/api/interpreter"
+
+# south, west, north, east
+BBOX = "37.7825,-122.4075,37.8040,-122.3780"
+COAST_BBOX = "37.7700,-122.4200,37.8150,-122.3650"
+
+QUERY = f"""
+[out:json][timeout:120];
+(
+  way["building"]({BBOX});
+  relation["building"]({BBOX});
+  way["building:part"]({BBOX});
+  way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|pedestrian|footway|motorway_link|trunk_link|primary_link)$"]({BBOX});
+  way["man_made"="pier"]({BBOX});
+  way["natural"="coastline"]({COAST_BBOX});
+  way["leisure"="park"]({BBOX});
+);
+out body geom;
+"""
+
+
+def main():
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    body = urllib.parse.urlencode({"data": QUERY}).encode()
+    req = urllib.request.Request(ENDPOINT, data=body, headers={"User-Agent": "fog-city-rush-map-builder/0.1"})
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        raw = resp.read()
+    OUT.write_bytes(raw)
+    print(f"wrote {OUT.relative_to(ROOT)} ({len(raw) // 1024} KB)")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

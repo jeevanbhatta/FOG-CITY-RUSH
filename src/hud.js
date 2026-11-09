@@ -1,0 +1,99 @@
+// DOM overlay: timer, stats, toasts, checkpoint pointer, menus.
+
+export function fmtTime(t) {
+  if (t == null || !isFinite(t)) return '—';
+  const m = Math.floor(t / 60);
+  const s = t - m * 60;
+  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
+}
+
+const $ = (sel) => document.querySelector(sel);
+
+export class Hud {
+  constructor() {
+    this.el = {
+      hud: $('#hud'),
+      course: $('#hud-course'),
+      cp: $('#hud-cp'),
+      time: $('#hud-time'),
+      best: $('#hud-best'),
+      speed: $('#hud-speed'),
+      alt: $('#hud-alt'),
+      toast: $('#toast'),
+      prompt: $('#prompt'),
+      pointer: $('#pointer'),
+      pointerDist: $('#pointer-dist'),
+      countdown: $('#countdown'),
+    };
+    this.toastTimer = 0;
+  }
+
+  show(on) {
+    this.el.hud.hidden = !on;
+  }
+
+  setCourse(name, best) {
+    this.el.course.textContent = name;
+    this.el.best.textContent = best != null ? `Best ${fmtTime(best)}` : '';
+    this.el.time.hidden = name === 'Free roam';
+    this.el.cp.hidden = name === 'Free roam';
+  }
+
+  toast(text, ms = 1100) {
+    const t = this.el.toast;
+    t.textContent = text;
+    t.classList.remove('on');
+    void t.offsetWidth;
+    t.classList.add('on');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => t.classList.remove('on'), ms);
+  }
+
+  countdown(text) {
+    const c = this.el.countdown;
+    if (!text) { c.hidden = true; return; }
+    c.hidden = false;
+    if (c.textContent !== text) {
+      c.textContent = text;
+      c.classList.remove('pop');
+      void c.offsetWidth;
+      c.classList.add('pop');
+    }
+  }
+
+  update(state) {
+    const { player, runner, camera, next } = state;
+    this.el.speed.textContent = Math.round((player.mode === 'zip' ? player.zip.speed : Math.hypot(player.speed, player.vel.y * 0.3)) * 3.6);
+    this.el.alt.textContent = Math.max(0, Math.round(player.pos.y));
+    if (runner.course) {
+      this.el.time.textContent = fmtTime(runner.time);
+      this.el.cp.textContent = `${Math.min(runner.index, runner.course.pts.length - 1)} / ${runner.course.pts.length - 1}`;
+    }
+    this.el.prompt.textContent = player.prompt || '';
+    this.el.prompt.hidden = !player.prompt;
+
+    // Checkpoint pointer: on-screen marker or an edge arrow.
+    const p = this.el.pointer;
+    if (!next) { p.hidden = true; return; }
+    const v = next.clone();
+    v.y += 1.4;
+    const dist = player.pos.distanceTo(next);
+    v.project(camera);
+    const behind = v.z > 1;
+    let x = v.x, y = v.y;
+    if (behind) { x = -x; y = -y; }
+    const onScreen = !behind && Math.abs(x) < 0.92 && Math.abs(y) < 0.88;
+    if (!onScreen) {
+      const m = Math.max(Math.abs(x) / 0.92, Math.abs(y) / 0.85);
+      x /= m; y /= m;
+    }
+    const W = window.innerWidth, H = window.innerHeight;
+    const sx = (x * 0.5 + 0.5) * W, sy = (-y * 0.5 + 0.5) * H;
+    p.hidden = false;
+    p.style.transform = `translate(${sx}px, ${sy}px)`;
+    p.classList.toggle('edge', !onScreen);
+    const ang = Math.atan2(-y, x);
+    p.style.setProperty('--ang', `${ang}rad`);
+    this.el.pointerDist.textContent = dist < 1000 ? `${Math.round(dist)} m` : `${(dist / 1000).toFixed(1)} km`;
+  }
+}
