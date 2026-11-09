@@ -567,7 +567,8 @@ export class Player {
       this.jumpBuffer = 0;
       this.mode = 'normal';
       this.vel.set(Z.dx * z.speed, Z.dy * z.speed + (release ? 7 : 0), Z.dz * z.speed);
-      if (t >= 1) this.vel.multiplyScalar(0.5);
+      // Riding off the end drops you onto the landing at a jog, however fast the line was.
+      if (t >= 1) this.vel.multiplyScalar(Math.min(0.5, 7 / Math.max(1, z.speed)));
       if (release && t < 0.97) this.emit('Zip jump');
       this.zip = null;
       this.zipCooldown = 0.6;

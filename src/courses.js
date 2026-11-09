@@ -76,7 +76,10 @@ export function defineCourses(W, V, D) {
     }
     if (out.length >= 3) {
       const loop = out.concat(out.slice(0, -1).reverse().slice(1)).concat([out[0]]);
-      for (const q of loop) race.push(ground(q[0], q[1]));
+      for (const q of loop) {
+        const prev = race[race.length - 1];
+        if (!prev || Math.hypot(prev.x - q[0], prev.z - q[1]) > 1) race.push(ground(q[0], q[1]));
+      }
     }
   }
 

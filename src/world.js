@@ -744,7 +744,8 @@ function buildPalace(world, stone, mats, group, ladders) {
   ladders.push({ x: dx * 12.85, z: dz * 12.85, nx: dx, nz: dz, tx: -dz, tz: dx, y0: 25, y1: 31 });
   const at = (u, v) => [dx * u - dz * v, dz * u + dx * v];
   return {
-    x: 0, z: 0, top: 45, plaza: [face[0] * 46, face[1] * 46], face: [dx, dz], at,
+    // The plaza lines up with the ladder pier, so running straight in from it reaches the ladder.
+    x: 0, z: 0, top: 45, plaza: [dx * 46, dz * 46], face: [dx, dz], at,
     climb: [[15.2, 25.1], [12.0, 31.1], [0, 43.1]],
     balcony: { r: 0, y: 43, zipR: 1.6, name: 'Top of the Palace dome' },
   };
