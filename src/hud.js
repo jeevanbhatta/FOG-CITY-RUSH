@@ -39,6 +39,10 @@ export class Hud {
     this.el.cp.hidden = name === 'Free roam';
   }
 
+  setRival(name, time) {
+    this.el.best.textContent = `${name} ${fmtTime(time)}`;
+  }
+
   toast(text, ms = 1100) {
     const t = this.el.toast;
     t.textContent = text;

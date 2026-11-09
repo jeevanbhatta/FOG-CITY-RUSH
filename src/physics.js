@@ -2,6 +2,8 @@
 // Every solid in the game (land, piers, buildings, bridge pieces, cable steps) is one of these,
 // which keeps collision simple and fast: circle-vs-polygon sideways, point-in-polygon for floors.
 
+const NONE = [];
+
 export class CollisionWorld {
   constructor(cellSize = 24) {
     this.cell = cellSize;
@@ -60,6 +62,26 @@ export class CollisionWorld {
       }
     }
     return s;
+  }
+
+  // Ladders bucketed by grid cell so the per-substep search only looks at nearby ones.
+  laddersNear(x, z) {
+    if (this._ladderN !== this.ladders.length) {
+      this._ladderN = this.ladders.length;
+      this._ladderGrid = new Map();
+      const c = this.cell;
+      for (const L of this.ladders) {
+        for (let cx = Math.floor((L.x - 2.5) / c); cx <= Math.floor((L.x + 2.5) / c); cx++) {
+          for (let cz = Math.floor((L.z - 2.5) / c); cz <= Math.floor((L.z + 2.5) / c); cz++) {
+            const k = this.key(cx, cz);
+            let list = this._ladderGrid.get(k);
+            if (!list) { list = []; this._ladderGrid.set(k, list); }
+            list.push(L);
+          }
+        }
+      }
+    }
+    return this._ladderGrid.get(this.key(Math.floor(x / this.cell), Math.floor(z / this.cell))) || NONE;
   }
 
   // Oriented rectangle helper: centre (x,z), half sizes along/across a direction.

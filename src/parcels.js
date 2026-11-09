@@ -13,14 +13,15 @@ export function placeParcels(W, V) {
   const world = W.world;
   const r = rand(2026);
   const bi = W.landmarks.bridgeInfo;
-  const f = W.landmarks.ferry;
+  const f = W.landmarks.hub;
+  const hb = f.balcony;
   // Landmark spots first.
-  spots.push([f.face[0] * 3.6, 72.6, f.face[1] * 3.6, 'Clock tower balcony']);
+  spots.push([f.face[0] * hb.r, hb.y + 0.6, f.face[1] * hb.r, hb.name]);
   const t1 = bi.at(BRIDGE.towers[0], 0); spots.push([t1[0], bi.towerTop + 0.6, t1[1], 'Bridge tower top']);
   const t2 = bi.at(BRIDGE.towers[1], 0); spots.push([t2[0], bi.towerTop + 0.6, t2[1], 'Far bridge tower']);
   const mid = bi.at((BRIDGE.towers[0] + BRIDGE.towers[1]) / 2, -(BRIDGE.halfWidth + 0.5));
   spots.push([mid[0], bi.cableY((BRIDGE.towers[0] + BRIDGE.towers[1]) / 2) + 1.3, mid[1], 'Cable low point']);
-  const anc = bi.at(BRIDGE.centreU + 22, 0); spots.push([anc[0], 76.6, anc[1], 'Centre anchorage']);
+  const anc = bi.at(BRIDGE.centreU + 22, 0); spots.push([anc[0], bi.endTop + 0.6, anc[1], BRIDGE.endName || 'Bridge end']);
   if (W.landmarks.tallest) spots.push([W.landmarks.tallest.x, W.landmarks.tallest.y + 0.6, W.landmarks.tallest.z, 'Top of the skyline']);
   // Rooftops that have a ladder or a zipline landing.
   const roofs = [];

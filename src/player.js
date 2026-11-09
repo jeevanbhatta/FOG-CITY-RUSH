@@ -39,6 +39,8 @@ export class Player {
     this.slideTime = 0;
     this.stumble = 0;
     this.rollTime = 0;
+    this.flow = 0; // 0..1 from the combo chain: a faster top sprint
+    this.carry = 0; // seconds of "keep your speed" after a roll or a clean landing
     this.slidePressedAt = -1;
     this.time = 0;
     this.mantle = null;
@@ -71,7 +73,7 @@ export class Player {
     this.mode = 'normal';
     this.mantle = this.ladder = this.zip = null;
     this.onGround = false;
-    this.slideTime = this.stumble = this.rollTime = 0;
+    this.slideTime = this.stumble = this.rollTime = this.carry = 0;
     this.wallRunTime = 0;
     this.coyote = this.jumpBuffer = this.wallTimer = 0;
     this.chute = null;
@@ -124,7 +126,8 @@ export class Player {
     const v = this.vel;
 
     // --- Horizontal control ---
-    let target = wishLen * (sprint ? T.sprint : T.run);
+    const top = T.sprint * (1 + 0.18 * this.flow);
+    let target = wishLen * (sprint ? top : T.run);
     if (this.stumble > 0) target *= 0.45;
     const tvx = wishLen > 0 ? (wx / wishLen) * target : 0;
     const tvz = wishLen > 0 ? (wz / wishLen) * target : 0;
@@ -140,7 +143,16 @@ export class Player {
       if (ns < 4) this.slideTime = 0;
     } else {
       const acc = this.onGround ? T.accGround : T.accAir * (this.wallRunning ? 0.4 : 1);
-      if (this.onGround || wishLen > 0) {
+      this.carry -= h;
+      // Momentum: right after a roll or a clean landing, running on keeps the extra speed for a moment.
+      const carrying = this.onGround && this.carry > 0 && wishLen > 0.5
+        && (v.x * wx + v.z * wz) / wishLen > Math.max(target, this.speed * 0.85);
+      if (carrying) {
+        const sp = this.speed, ns = Math.max(target, sp - 3 * h);
+        const dx = wx / wishLen, dz = wz / wishLen;
+        v.x += (dx * sp - v.x) * Math.min(1, h * 6); v.z += (dz * sp - v.z) * Math.min(1, h * 6);
+        const k = ns / Math.max(1e-3, this.speed); v.x *= k; v.z *= k;
+      } else if (this.onGround || wishLen > 0) {
         let dx = tvx - v.x, dz = tvz - v.z;
         const dl = Math.hypot(dx, dz), maxd = acc * h;
         if (dl > maxd) { dx *= maxd / dl; dz *= maxd / dl; }
@@ -188,8 +200,13 @@ export class Player {
       } else if (this.wallTimer > 0 && this.wall) {
         const w = this.wall;
         const along = wishLen > 0 ? 3.5 : 0;
-        v.x = w.nx * 7.5 + (wishLen > 0 ? (wx / wishLen) * along : 0);
-        v.z = w.nz * 7.5 + (wishLen > 0 ? (wz / wishLen) * along : 0);
+        // Keep the speed you had along the wall (capped), push off, and add a little toward your input.
+        const vn = v.x * w.nx + v.z * w.nz;
+        let tx = v.x - w.nx * vn, tz = v.z - w.nz * vn;
+        const tl = Math.hypot(tx, tz), cap = top * 0.9;
+        if (tl > cap) { tx *= cap / tl; tz *= cap / tl; }
+        v.x = w.nx * 7.5 + tx * 0.85 + (wishLen > 0 ? (wx / wishLen) * along : 0);
+        v.z = w.nz * 7.5 + tz * 0.85 + (wishLen > 0 ? (wz / wishLen) * along : 0);
         v.y = T.jump * 1.02;
         this.wallTimer = 0;
         this.wallRunning = false;
@@ -366,6 +383,8 @@ export class Player {
   land(fallSpeed) {
     this.landed = fallSpeed;
     const rolled = this.time - this.slidePressedAt < 0.3;
+    // Land running and you keep your air speed for a beat; a roll keeps it longer.
+    this.carry = fallSpeed > 21 ? (rolled ? 0.6 : 0) : 0.25;
     if (fallSpeed > 21) {
       if (rolled) {
         this.rollTime = 0.45;
@@ -421,6 +440,7 @@ export class Player {
       from: this.pos.clone(),
       to: new THREE.Vector3(tx, ty, tz),
       nx: contact.nx, nz: contact.nz,
+      inSpeed: this.speed,
     };
     this.vel.set(0, 0, 0);
     this.facing = Math.atan2(-contact.nx, -contact.nz);
@@ -441,7 +461,10 @@ export class Player {
     if (t >= 1) {
       this.mode = 'normal';
       this.onGround = true;
-      this.vel.set(-m.nx * 4, 0, -m.nz * 4);
+      // Vault through: come out of a mantle at a good share of the speed you went in with.
+      const out = Math.max(4, Math.min(T.sprint, m.inSpeed * 0.8));
+      this.vel.set(-m.nx * out, 0, -m.nz * out);
+      this.carry = 0.3;
       this.mantle = null;
       this.wallClimbReady = true;
     }
@@ -449,7 +472,7 @@ export class Player {
 
   checkLadder(ctx) {
     const p = this.pos;
-    const ladders = this.world.ladders;
+    const ladders = this.world.laddersNear(p.x, p.z);
     for (let i = 0; i < ladders.length; i++) {
       const L = ladders[i];
       const dx = p.x - L.x, dz = p.z - L.z;
@@ -535,7 +558,7 @@ export class Player {
   stepZip(h, ctx) {
     const z = this.zip, Z = z.Z;
     const slope = -Z.dy;
-    z.speed = Math.min(T.zipMax, z.speed + (T.gravity * slope * 0.85 + 2) * h - z.speed * 0.02 * h);
+    z.speed = Math.min(Z.max || T.zipMax, z.speed + (T.gravity * slope * 0.85 + 2) * h - z.speed * 0.02 * h);
     z.t += (z.speed * h) / Z.len;
     const t = Math.min(1, z.t);
     this.pos.set(Z.ax + Z.dx * t * Z.len, Z.ay + Z.dy * t * Z.len - 2.05, Z.az + Z.dz * t * Z.len);
@@ -545,6 +568,7 @@ export class Player {
       this.mode = 'normal';
       this.vel.set(Z.dx * z.speed, Z.dy * z.speed + (release ? 7 : 0), Z.dz * z.speed);
       if (t >= 1) this.vel.multiplyScalar(0.5);
+      if (release && t < 0.97) this.emit('Zip jump');
       this.zip = null;
       this.zipCooldown = 0.6;
     }

@@ -63,6 +63,7 @@ export class Particles {
   // o: { color, count, speed, spread, up, life, size, gravity, drag, grow, alpha, jitter }
   emit(x, y, z, o) {
     if (!this.enabled) return;
+    this.busy = true;
     const n = Math.max(1, Math.round((o.count || 1) * this.density));
     const c = new THREE.Color(o.color ?? 0xffffff);
     for (let k = 0; k < n; k++) {
@@ -93,8 +94,12 @@ export class Particles {
 
   update(dt) {
     const P = this.pos, V = this.vel;
+    // Nothing alive and nothing to clear: skip the loop and the GPU upload.
+    if (!this.busy) return;
+    let alive = 0;
     for (let i = 0; i < this.max; i++) {
       if (this.life[i] <= 0) continue;
+      alive++;
       this.age[i] += dt;
       const t = this.age[i] / this.life[i];
       if (t >= 1) {
@@ -116,6 +121,7 @@ export class Particles {
     this.geo.attributes.color.needsUpdate = true;
     this.geo.attributes.aSize.needsUpdate = true;
     this.geo.attributes.aAlpha.needsUpdate = true;
+    this.busy = alive > 0;
   }
 
   // --- presets ---

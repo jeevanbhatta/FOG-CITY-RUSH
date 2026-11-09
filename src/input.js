@@ -1,4 +1,12 @@
-// Keyboard, mouse (pointer lock) and touch input, folded into one simple state object.
+// Keyboard, mouse (pointer lock), touch and gamepad input, folded into one simple state object.
+
+// Standard gamepad layout (Xbox names): buttons are folded into pseudo key codes.
+const PAD_BUTTONS = {
+  0: 'pad:jump', 1: 'pad:slide', 2: 'pad:grab', 3: 'pad:use', 4: 'pad:throttleDown', 5: 'pad:sprint',
+  6: 'pad:throttleDown', 7: 'pad:sprint', 9: 'pad:start', 10: 'pad:l3', 12: 'pad:up', 13: 'pad:down', 14: 'pad:left', 15: 'pad:right',
+};
+const DEAD = 0.16;
+const dz = (v) => (Math.abs(v) < DEAD ? 0 : (v - Math.sign(v) * DEAD) / (1 - DEAD));
 
 export class Input {
   constructor(canvas, touchRoot) {
@@ -51,6 +59,41 @@ export class Input {
     window.addEventListener('touchstart', markTouch, { capture: true, passive: true });
 
     this.setupTouch(touchRoot);
+    this.pad = { x: 0, y: 0, active: false, connected: false };
+    window.addEventListener('gamepadconnected', () => { this.pad.connected = true; document.body.classList.add('pad'); });
+  }
+
+  // Poll the first connected gamepad. Call once per frame, menus included.
+  pollPad(dt) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp = null;
+    for (const p of pads) if (p && p.connected) { gp = p; break; }
+    const P = this.pad;
+    if (!gp) { if (P.active) { for (const c of Object.values(PAD_BUTTONS)) this.keys.delete(c); P.active = false; } P.x = P.y = 0; return; }
+    P.connected = true;
+    const ax = gp.axes;
+    P.x = dz(ax[0] || 0);
+    P.y = -dz(ax[1] || 0);
+    // Right stick looks around: a curve gives fine aim near the centre.
+    const lx = dz(ax[2] || 0), ly = dz(ax[3] || 0);
+    const k = 1100 * dt;
+    this.lookDX += Math.sign(lx) * lx * lx * k;
+    this.lookDY += Math.sign(ly) * ly * ly * k * 0.7;
+    let any = Math.hypot(P.x, P.y) > 0;
+    gp.buttons.forEach((b, i) => {
+      const code = PAD_BUTTONS[i];
+      if (!code) return;
+      const on = b.pressed || b.value > 0.5;
+      if (on) any = true;
+      // Two physical buttons can share a code: only release when neither is held.
+      if (on) { if (!this.keys.has(code)) this.pressed.add(code); this.keys.add(code); this._padHeld = this._padHeld || new Set(); this._padHeld.add(i); }
+      else if (this._padHeld && this._padHeld.has(i)) {
+        this._padHeld.delete(i);
+        const still = [...this._padHeld].some((j) => PAD_BUTTONS[j] === code);
+        if (!still) this.keys.delete(code);
+      }
+    });
+    if (any) P.active = true;
   }
 
   setupTouch(root) {
@@ -142,22 +185,24 @@ export class Input {
     if (this.down('KeyD', 'ArrowRight')) x += 1;
     if (this.down('KeyA', 'ArrowLeft')) x -= 1;
     if (this.touchMove.active) { x = this.touchMove.x; y = this.touchMove.y; }
+    if (this.pad.x || this.pad.y) { x = this.pad.x; y = this.pad.y; }
     const len = Math.hypot(x, y);
     if (len > 1) { x /= len; y /= len; }
     this.move.x = x;
     this.move.y = y;
   }
 
-  get jump() { return this.down('Space', 'touch:jump'); }
-  get jumpHit() { return this.hit('Space', 'touch:jump'); }
-  get sprint() { return this.down('ShiftLeft', 'ShiftRight', 'touch:sprint'); }
-  get slideHit() { return this.hit('KeyC', 'ControlLeft', 'touch:slide'); }
-  get slide() { return this.down('KeyC', 'ControlLeft', 'touch:slide'); }
-  get grabHit() { return this.hit('KeyE', 'touch:grab'); }
-  get useHit() { return this.hit('KeyF', 'touch:use'); }
-  get handbrake() { return this.down('Space', 'touch:jump'); }
-  get throttleUp() { return this.down('ShiftLeft', 'ShiftRight', 'touch:jump'); }
-  get throttleDown() { return this.down('KeyC', 'ControlLeft', 'touch:slide'); }
+  get jump() { return this.down('Space', 'touch:jump', 'pad:jump'); }
+  get jumpHit() { return this.hit('Space', 'touch:jump', 'pad:jump'); }
+  // On a pad, hold a trigger or push the stick all the way to sprint.
+  get sprint() { return this.down('ShiftLeft', 'ShiftRight', 'touch:sprint', 'pad:sprint') || Math.hypot(this.pad.x, this.pad.y) > 0.95; }
+  get slideHit() { return this.hit('KeyC', 'ControlLeft', 'touch:slide', 'pad:slide'); }
+  get slide() { return this.down('KeyC', 'ControlLeft', 'touch:slide', 'pad:slide'); }
+  get grabHit() { return this.hit('KeyE', 'touch:grab', 'pad:grab'); }
+  get useHit() { return this.hit('KeyF', 'touch:use', 'pad:use'); }
+  get handbrake() { return this.down('Space', 'touch:jump', 'pad:jump'); }
+  get throttleUp() { return this.down('ShiftLeft', 'ShiftRight', 'touch:jump', 'pad:sprint'); }
+  get throttleDown() { return this.down('KeyC', 'ControlLeft', 'touch:slide', 'pad:throttleDown'); }
 
   consumeLook() {
     const dx = this.lookDX, dy = this.lookDY;

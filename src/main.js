@@ -16,6 +16,9 @@ import { Traffic, Gulls } from './life.js';
 import { Minimap } from './minimap.js';
 import { placeParcels, Parcels } from './parcels.js';
 import { Details } from './details.js';
+import { DISTRICTS, pickDistrict } from './districts.js';
+import { Combo } from './combo.js';
+import { encodeRace, decodeRace, raceUrl, readRaceFromUrl } from './share.js';
 
 const $ = (s) => document.querySelector(s);
 const canvas = $('#game');
@@ -27,6 +30,8 @@ const store = {
   set(k, v) { try { localStorage.setItem('fcr.' + k, JSON.stringify(v)); } catch (_) { /* storage blocked */ } },
 };
 const S = loadSettings(isTouch);
+const D = pickDistrict(S.district);
+if (S.district !== D.id) { S.district = D.id; saveSettings(S); }
 
 // ---------- loading screen ----------
 const loading = $('#loading');
@@ -68,7 +73,7 @@ window.addEventListener('resize', resize);
 // ---------- load the map ----------
 async function loadMap() {
   try {
-    const res = await fetch('data/embarcadero.json');
+    const res = await fetch(D.file);
     if (!res.ok) throw new Error(res.status);
     const total = +res.headers.get('content-length') || 0;
     if (!res.body || !total) return await res.json();
@@ -80,7 +85,7 @@ async function loadMap() {
       if (done) break;
       chunks.push(value);
       got += value.length;
-      setLoad(5 + 50 * Math.min(1, got / total), 'Downloading the Embarcadero');
+      setLoad(5 + 50 * Math.min(1, got / total), `Downloading ${D.name}`);
     }
     const all = new Uint8Array(got);
     let o = 0;
@@ -92,13 +97,13 @@ async function loadMap() {
   }
 }
 
-setLoad(4, 'Downloading the Embarcadero');
+setLoad(4, `Downloading ${D.name}`);
 const map = await loadMap();
 $('#attribution').textContent = map.meta.generated ? 'Generated stand-in layout' : '© OpenStreetMap contributors';
 setLoad(60, 'Raising the skyline');
 await nextFrame();
 
-const W = buildWorld(map, scene);
+const W = buildWorld(map, scene, D);
 setLoad(82, 'Stringing ziplines and parking cars');
 await nextFrame();
 
@@ -123,12 +128,12 @@ particles = new Particles(scene);
 // ---------- vehicles ----------
 const V = { cars: [], plane: null, carStart: null, dock: null };
 {
-  const f = W.landmarks.ferry;
+  const f = W.landmarks.hub;
   const bi = W.landmarks.bridgeInfo;
-  // Nearest point on The Embarcadero to the plaza: the race start and the first parked car.
+  // Nearest point on the district's boulevard to the plaza: the race start and the first parked car.
   let best = null, bd = Infinity;
   for (const r of map.roads) {
-    if (!r.n || !/embarcadero/i.test(r.n)) continue;
+    if (!r.n || !D.boulevard.test(r.n)) continue;
     for (const q of r.p) {
       const d = Math.hypot(q[0] - f.plaza[0], q[1] - f.plaza[1]);
       if (d < bd) { bd = d; best = q; }
@@ -149,8 +154,8 @@ const V = { cars: [], plane: null, carStart: null, dock: null };
     V.cars.push(car);
     if (!V.carStart) V.carStart = { pos: p.clone(), heading: h };
   });
-  // Seaplane dock: open water off the bay side of the Ferry Building.
-  const bx = -f.face[0], bz = -f.face[1];
+  // Seaplane dock: open water off the bay side of the hub.
+  const [bx, bz] = D.dockDir || [-f.face[0], -f.face[1]];
   const wp = findWater(W.world, bx * 60, bz * 60, bx, bz);
   if (wp) {
     let sx = wp.x, sz = wp.z;
@@ -175,8 +180,8 @@ setLoad(90, 'Planting trees and painting crosswalks');
 await nextFrame();
 const details = (() => {
   const avoid = [];
-  const f = W.landmarks.ferry;
-  avoid.push([f.plaza[0], f.plaza[1], 22], [0, 0, 16]);
+  const f = W.landmarks.hub;
+  avoid.push([f.plaza[0], f.plaza[1], 22], [0, 0, D.hub === 'palace' ? 26 : 16]);
   for (const c of V.cars) avoid.push([c.pos.x, c.pos.z, 4]);
   if (V.dock) avoid.push([V.dock.shore.x, V.dock.shore.z, 8]);
   for (const L of W.world.ladders) {
@@ -190,20 +195,76 @@ const details = (() => {
   if (tall) avoid.push([tall.cx, tall.cz, Math.max(tall.s.maxX - tall.s.minX, tall.s.maxZ - tall.s.minZ)]);
   return new Details(scene, W, map, {
     avoid,
+    boulevard: D.boulevard,
     radius: QUALITY[S.quality].detailRadius,
     trafficRoads: new Set(traffic.routes.map((r) => r.p)),
   });
 })();
 
-const courses = defineCourses(W, V).map((c) => resolveCourse(c, W.world));
+const courses = defineCourses(W, V, D).map((c) => resolveCourse(c, W.world));
+
+// ---------- the menu's fly-through: a loop past the hub, along the bridge and back over the water ----------
+const _look = new THREE.Vector3();
+const tour = (() => {
+  const h = W.landmarks.hub, bi = W.landmarks.bridgeInfo;
+  const [fx, fz] = h.face;
+  const sx = -fz, sz = fx; // sideways from the plaza face
+  const pos = [], look = [];
+  const add = (p, l) => { pos.push(new THREE.Vector3(...p)); look.push(new THREE.Vector3(...l)); };
+  const t0 = bi.at(BRIDGE.towers[0], 0), t1 = bi.at(BRIDGE.towers[1], 0);
+  const ramp = bi.at(-BRIDGE.rampLen * 0.4, 0);
+  add([fx * 70 + sx * 30, 14, fz * 70 + sz * 30], [0, h.top * 0.55, 0]);
+  add([sx * 110, h.top * 0.9, sz * 110], [0, h.top * 0.7, 0]);
+  add([-fx * 120 + sx * 40, h.top + 30, -fz * 120 + sz * 40], [0, h.top * 0.5, 0]);
+  const mid = [(ramp[0] - fx * 120) / 2, (ramp[1] - fz * 120) / 2];
+  add([mid[0], 70, mid[1]], [ramp[0], 40, ramp[1]]);
+  const r1 = bi.at(-60, -70);
+  add([r1[0], BRIDGE.deckY + 18, r1[1]], [t0[0], BRIDGE.towerTop * 0.7, t0[1]]);
+  const r2 = bi.at(BRIDGE.towers[0] + 120, -55);
+  add([r2[0], BRIDGE.deckY + 6, r2[1]], [t1[0], BRIDGE.deckY + 20, t1[1]]);
+  const r3 = bi.at(BRIDGE.towers[0] + 260, 90);
+  add([r3[0], BRIDGE.towerTop + 25, r3[1]], [t0[0], BRIDGE.towerTop, t0[1]]);
+  const r4 = bi.at(BRIDGE.towers[0] - 80, 260);
+  add([r4[0], 140, r4[1]], [0, 40, 0]);
+  add([-fx * 260 - sx * 120, 90, -fz * 260 - sz * 120], [0, h.top * 0.6, 0]);
+  add([fx * 160 - sx * 90, 45, fz * 160 - sz * 90], [0, h.top * 0.6, 0]);
+  const P = new THREE.CatmullRomCurve3(pos, true, 'centripetal');
+  const L = new THREE.CatmullRomCurve3(look, true, 'centripetal');
+  return { pos: P, look: L, duration: Math.max(70, P.getLength() / 34) };
+})();
 
 // ---------- ghosts, parcels, minimap ----------
-const gullCentres = [[W.landmarks.ferry.face[0] * -120, W.landmarks.ferry.face[1] * -120]];
+const gullCentres = [[W.landmarks.hub.face[0] * -120, W.landmarks.hub.face[1] * -120]];
 for (const p of map.piers.slice(0, 6)) gullCentres.push([p[0][0], p[0][1]]);
 const gulls = new Gulls(scene, gullCentres);
 const ghost = new Ghost(scene, V.cars[0] ? V.cars[0].mesh : new THREE.Group(), V.plane ? V.plane.mesh : new THREE.Group());
 const recorder = new GhostRecorder();
-const parcels = new Parcels(scene, placeParcels(W, V), store.get('parcels'));
+const combo = new Combo();
+combo.best = store.get('combo.best') || 0;
+let comboShown = 0, comboMult = 0;
+function updateCombo(dt) {
+  const notice = driving ? combo.bank() : combo.update(dt, player, player.events);
+  player.flow = combo.flow;
+  if (notice) {
+    hud.toast(notice.text, 1300);
+    if (!notice.lost) { sound.chime(); if (combo.best > (store.get('combo.best') || 0)) store.set('combo.best', combo.best); }
+  }
+  $('#hud-style').textContent = Math.round(combo.total).toLocaleString();
+  const el = $('#combo');
+  if (combo.live && combo.mult > 1) comboShown = 0.6;
+  else comboShown -= dt;
+  el.hidden = comboShown <= 0;
+  if (el.hidden) { comboMult = 0; return; }
+  if (combo.live) {
+    $('#cb-mult').textContent = `×${combo.mult}`;
+    $('#cb-move').textContent = combo.flash ? combo.flash.text : '';
+    $('#cb-pts').textContent = `${combo.points.toLocaleString()} × ${combo.mult}`;
+    $('#cb-bar').style.transform = `scaleX(${Math.max(0, combo.timer / 2).toFixed(3)})`;
+    if (combo.mult !== comboMult) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); comboMult = combo.mult; }
+  }
+}
+const parcelKey = D.id === 'embarcadero' ? 'parcels' : `parcels.${D.id}`;
+const parcels = new Parcels(scene, placeParcels(W, V), store.get(parcelKey));
 const minimap = new Minimap($('#minimap'), map);
 {
   const bi = W.landmarks.bridgeInfo;
@@ -224,9 +285,14 @@ const blobs = [player, ...vehicles()].map((owner) => {
 });
 
 // ---------- settings ----------
+let maxRatio = 1, dynRatio = 0;
 function applySettings() {
   const q = QUALITY[S.quality] || QUALITY.high;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatio));
+  maxRatio = Math.min(window.devicePixelRatio, q.pixelRatio);
+  if (!S.autoRes) dynRatio = maxRatio;
+  dynRatio = Math.min(dynRatio || maxRatio, maxRatio);
+  renderer.setPixelRatio(dynRatio);
+  $('#perf').hidden = !S.showFps;
   if (renderer.shadowMap.enabled !== q.shadows) {
     renderer.shadowMap.enabled = q.shadows;
     scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
@@ -263,6 +329,8 @@ function openSettings(from) {
   $('#set-invert-flight').checked = S.invertFlight;
   $('#set-reduce').checked = S.reduceMotion;
   $('#set-minimap').checked = S.minimap;
+  $('#set-autores').checked = S.autoRes;
+  $('#set-fps').checked = S.showFps;
   showScreen('#settings');
 }
 const bindSetting = (id, key, read) => $(id).addEventListener('input', (e) => {
@@ -278,6 +346,8 @@ bindSetting('#set-invert-look', 'invertLook', (el) => el.checked);
 bindSetting('#set-invert-flight', 'invertFlight', (el) => el.checked);
 bindSetting('#set-reduce', 'reduceMotion', (el) => el.checked);
 bindSetting('#set-minimap', 'minimap', (el) => el.checked);
+bindSetting('#set-autores', 'autoRes', (el) => el.checked);
+bindSetting('#set-fps', 'showFps', (el) => el.checked);
 
 // ---------- first-time tips ----------
 const seenTips = new Set(store.get('tips') || []);
@@ -429,6 +499,7 @@ function resetAllVehicles() {
 
 function startCourse(c) {
   if (driving) exitVehicle(true);
+  store.set('last.' + D.id, c.id);
   active = c;
   resetAllVehicles();
   runner.start(c);
@@ -440,8 +511,12 @@ function startCourse(c) {
     V.plane.resetToDock();
     enterVehicle(V.plane);
   }
-  hud.setCourse(c.name, store.get('best.' + c.id));
-  ghost.load(store.get('ghost.' + c.id));
+  rival = challenge && challenge.course === c ? challenge : null;
+  hud.setCourse(c.name, rival ? null : store.get('best.' + c.id));
+  if (rival) hud.setRival(rival.name, rival.time);
+  ghost.load(rival ? rival.samples : store.get('ghost.' + c.id));
+  ghost.setRival(!!rival);
+  combo.reset();
   ghost.update(0, 0);
   recorder.start();
   parcels.show(false);
@@ -461,10 +536,11 @@ function startFree() {
   runner.clear();
   ghost.hide();
   resetAllVehicles();
-  const p = W.landmarks.ferry.plaza;
+  const p = W.landmarks.hub.plaza;
   spawnAt(new THREE.Vector3(p[0], 0, p[1]), new THREE.Vector3(0, 0, 0));
   hud.setCourse('Free roam', null);
   parcels.show(true);
+  combo.reset();
   state = 'play';
   showScreen(null);
   hud.show(true);
@@ -526,6 +602,17 @@ function finish() {
   $('#res-time').textContent = fmtTime(t);
   $('#res-medal').textContent = medal ? `${medal} medal` : `No medal. Bronze is ${fmtTime(m.bronze)}`;
   $('#res-medal').dataset.medal = (medal || 'none').toLowerCase();
+  const rv = $('#res-rival');
+  rv.hidden = !rival;
+  if (rival) {
+    const d = t - rival.time;
+    rv.className = d <= 0 ? 'won' : 'lost';
+    rv.textContent = d <= 0 ? `You beat ${rival.name} by ${fmtTime(-d)}` : `${rival.name} is ${fmtTime(d)} ahead`;
+  }
+  $('#share-box').hidden = true;
+  combo.bank();
+  $('#res-style').textContent = combo.total > 0 ? `Style ${Math.round(combo.total).toLocaleString()} · best combo ever ${Math.round(Math.max(combo.best, store.get('combo.best') || 0)).toLocaleString()}` : '';
+  if (combo.best > (store.get('combo.best') || 0)) store.set('combo.best', combo.best);
   $('#res-best').textContent = isBest
     ? (prev == null ? 'First finish recorded. Your ghost will race you next time.' : `New best, ${fmtTime(prev - t)} faster. Ghost updated.`)
     : `Best ${fmtTime(prev)}`;
@@ -551,21 +638,82 @@ function showScreen(sel) {
   document.body.classList.toggle('in-game', !sel);
 }
 
+const ICONS = {
+  run: '<circle cx="15" cy="4.5" r="2"/><path d="M7 21l3.5-6 3 2.5V22M5 12.5l4-3.5 4.5 1 3 4h3M10.5 15l1.5-5.5"/>',
+  car: '<path d="M3 16v-3l2.2-5h13.6L21 13v3z"/><circle cx="7.5" cy="17" r="2"/><circle cx="16.5" cy="17" r="2"/>',
+  plane: '<path d="M2 12h20M12 12l-4 8M12 12l-4-8M18 12l2-3M18 12l2 3M4 15h5"/>',
+  chute: '<path d="M3 10a9 7 0 0 1 18 0M3 10l9 9 9-9M12 10v9"/>',
+  relay: '<path d="M3 12h13M12 6l6 6-6 6M21 5v14"/>',
+};
+const TABS = [['all', 'All'], ['parkour', 'Parkour'], ['drive', 'Drive'], ['fly', 'Fly'], ['mission', 'Missions']];
+function category(c) {
+  if (c.relay) return 'mission';
+  if (c.vehicle === 'car') return 'drive';
+  if (c.vehicle === 'plane' || c.kind === 'Parachute') return 'fly';
+  return 'parkour';
+}
+function medalOf(c) {
+  const best = store.get('best.' + c.id), m = c.medals;
+  return best == null ? null : best <= m.gold ? 'gold' : best <= m.silver ? 'silver' : best <= m.bronze ? 'bronze' : 'none';
+}
+let menuTab = store.get('tab') || 'all';
+
 function renderMenu() {
+  // Big play button: carry on with the last run, or the first one without a gold medal.
+  const lastId = store.get('last.' + D.id);
+  const last = courses.find((c) => c.id === lastId);
+  const next = last || courses.find((c) => medalOf(c) !== 'gold') || courses[0];
+  $('#continue-sub').textContent = next ? `${last ? 'Continue' : 'Start'} · ${next.name}` : '';
+  $('#btn-continue').onclick = () => (next ? startCourse(next) : startFree());
+  $('#challenge').hidden = !challenge;
+  if (challenge) {
+    const esc = (t) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    $('#challenge-text').innerHTML = `<b>${esc(challenge.name)}</b> challenged you to <b>${esc(challenge.course.name)}</b>. Their time: <b>${fmtTime(challenge.time)}</b>`;
+  }
+
+  // Progress strip.
+  const tally = { gold: 0, silver: 0, bronze: 0 };
+  for (const c of courses) { const m = medalOf(c); if (tally[m] != null) tally[m]++; }
+  $('#progress').innerHTML = `
+    <span><i style="background:var(--gold)"></i>${tally.gold}</span>
+    <span><i style="background:var(--silver)"></i>${tally.silver}</span>
+    <span><i style="background:var(--bronze)"></i>${tally.bronze}</span>
+    <span>Postcards ${parcels.count} / ${parcels.total}</span>`;
+
+  // Tabs.
+  const tabs = $('#course-tabs');
+  tabs.innerHTML = '';
+  for (const [id, label] of TABS) {
+    if (id !== 'all' && !courses.some((c) => category(c) === id)) continue;
+    const b = document.createElement('button');
+    b.className = 'tab';
+    b.id = 'tab-' + id;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(menuTab === id));
+    b.textContent = label;
+    b.addEventListener('click', () => { menuTab = id; store.set('tab', id); renderMenu(); });
+    tabs.appendChild(b);
+  }
+
   const list = $('#course-list');
   list.innerHTML = '';
   courses.forEach((c, i) => {
+    const cat = category(c);
+    if (menuTab !== 'all' && cat !== menuTab) return;
     const best = store.get('best.' + c.id);
     const m = c.medals;
-    const medal = best == null ? '' : best <= m.gold ? 'gold' : best <= m.silver ? 'silver' : best <= m.bronze ? 'bronze' : '';
-    const kind = c.vehicle === 'car' ? 'Car' : c.vehicle === 'plane' ? 'Seaplane' : c.relay ? 'Relay' : c.id === 'drop' ? 'Parachute' : 'On foot';
+    const medal = medalOf(c) || '';
+    const kind = c.vehicle === 'car' ? 'Car' : c.vehicle === 'plane' ? 'Seaplane' : c.relay ? 'Relay' : c.kind || 'On foot';
+    const icon = ICONS[c.vehicle === 'car' ? 'car' : c.vehicle === 'plane' ? 'plane' : c.relay ? 'relay' : c.kind === 'Parachute' ? 'chute' : 'run'];
+    const rank = { bronze: 1, silver: 2, gold: 3 }[medal] || 0;
     const li = document.createElement('li');
     li.innerHTML = `
-      <button class="course" id="course-${c.id}" data-i="${i}">
+      <button class="course" id="course-${c.id.replace('.', '-')}" data-i="${i}">
+        <span class="c-kind"><svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${kind} · ${(c.length / 1000).toFixed(1)} km</span>
         <span class="c-head"><span class="c-name">${c.name}</span><span class="c-diff" data-d="${c.difficulty.toLowerCase()}">${c.difficulty}</span></span>
         <span class="c-blurb">${c.blurb}</span>
         <span class="c-meta">
-          <span>${kind} · ${(c.length / 1000).toFixed(2)} km · ${c.pts.length - 1} rings</span>
+          <span class="medal-pips" aria-label="${medal || 'no'} medal"><i class="b ${rank >= 1 ? 'on' : ''}"></i><i class="s ${rank >= 2 ? 'on' : ''}"></i><i class="g ${rank >= 3 ? 'on' : ''}"></i></span>
           <span>Gold ${fmtTime(m.gold)}</span>
           <span class="c-best ${medal}">${best != null ? 'Best ' + fmtTime(best) : 'Not run yet'}</span>
         </span>
@@ -573,8 +721,33 @@ function renderMenu() {
     list.appendChild(li);
   });
   list.querySelectorAll('button.course').forEach((b) => b.addEventListener('click', () => startCourse(courses[+b.dataset.i])));
-  $('#parcel-count').textContent = `Postcards ${parcels.count} / ${parcels.total}`;
   renderCharacter();
+  renderDistricts();
+}
+
+function renderDistricts() {
+  $('#district-name').textContent = D.name;
+  const o = map.meta.origin;
+  if (o) $('#district-coords').textContent = `${o.lat.toFixed(4)}° N · ${Math.abs(o.lon).toFixed(4)}° W`;
+  const box = $('#district-cards');
+  box.innerHTML = '';
+  for (const d of Object.values(DISTRICTS)) {
+    const b = document.createElement('button');
+    b.className = 'district';
+    b.id = 'district-' + d.id;
+    b.setAttribute('aria-pressed', String(d === D));
+    b.innerHTML = `<span class="d-state">${d === D ? 'You are here' : 'Travel'}</span><span class="d-name">${d.name}</span><span class="d-tag">${d.tagline}</span>`;
+    // Each district is its own download: switch by reloading with just that map.
+    b.addEventListener('click', () => {
+      if (d === D) return;
+      S.district = d.id;
+      saveSettings(S);
+      const u = new URL(location.href);
+      u.searchParams.set('d', d.id);
+      location.href = u.toString();
+    });
+    box.appendChild(b);
+  }
 }
 
 function renderCharacter() {
@@ -601,9 +774,61 @@ function renderCharacter() {
     b.addEventListener('click', () => { S.skin = i; saveSettings(S); player.setLook(S.look, S.skin); renderCharacter(); });
     sw.appendChild(b);
   });
+  const L = LOOKS[S.look];
+  $('#char-val').textContent = L ? L.label : '';
 }
 
 $('#btn-free').addEventListener('click', startFree);
+
+// ---------- ghost-race links ----------
+let challenge = null, rival = null;
+{
+  const code = readRaceFromUrl();
+  if (code) {
+    decodeRace(code).then(({ meta, samples }) => {
+      const c = courses.find((k) => k.id === meta.c);
+      if (!c || meta.d !== D.id || samples.length < 2) throw new Error('unknown course');
+      challenge = { course: c, name: String(meta.n || 'A friend').slice(0, 16), time: +meta.t, samples };
+      if (state === 'menu') renderMenu();
+    }).catch((e) => { console.warn('Race link:', e); hud.toast('That race link could not be opened', 2000); });
+  }
+}
+$('#btn-challenge').addEventListener('click', () => challenge && startCourse(challenge.course));
+$('#btn-challenge-x').addEventListener('click', () => {
+  challenge = null;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* sandboxed */ }
+  renderMenu();
+});
+async function shareRun() {
+  const c = active;
+  const samples = store.get('ghost.' + c.id), best = store.get('best.' + c.id);
+  if (!samples || best == null) return;
+  const box = $('#share-box');
+  box.hidden = false;
+  const name = ($('#share-name').value || '').trim().slice(0, 16);
+  if (name !== (S.name || '')) { S.name = name; saveSettings(S); }
+  const code = await encodeRace({ c: c.id, d: D.id, n: name || 'A friend', t: Math.round(best * 1000) / 1000 }, samples);
+  const url = raceUrl(D.id, code);
+  $('#share-link').value = url;
+  const text = `I ran ${c.name} in ${fmtTime(best)} in Fog City Rush. Beat my ghost:`;
+  if (navigator.share && isTouch) {
+    try { await navigator.share({ title: 'Fog City Rush', text, url }); return; } catch (_) { /* cancelled: leave the box open */ }
+  }
+  copyLink();
+}
+async function copyLink() {
+  const el = $('#share-link');
+  try {
+    await navigator.clipboard.writeText(el.value);
+    $('#share-note').textContent = 'Link copied. Anyone who opens it races your best run as a ghost.';
+  } catch (_) {
+    el.focus(); el.select();
+    $('#share-note').textContent = 'Copy this link and send it. Anyone who opens it races your best run as a ghost.';
+  }
+}
+$('#btn-share').addEventListener('click', () => { $('#share-name').value = S.name || ''; shareRun(); });
+$('#share-name').addEventListener('change', shareRun);
+$('#btn-copy').addEventListener('click', copyLink);
 $('#btn-resume').addEventListener('click', resume);
 $('#btn-restart').addEventListener('click', () => (active ? startCourse(active) : startFree()));
 $('#btn-menu').addEventListener('click', toMenu);
@@ -635,12 +860,45 @@ window.addEventListener('keydown', (e) => {
     saveSettings(S);
     if (state === 'play') hud.toast(S.invertFlight ? 'Flight: W dives' : 'Flight: W climbs', 1200);
   }
+  if (e.code === 'F3') {
+    e.preventDefault();
+    S.showFps = !S.showFps;
+    saveSettings(S);
+    applySettings();
+  }
   if (e.code === 'KeyM') {
     S.minimap = !S.minimap;
     saveSettings(S);
     applySettings();
   }
 });
+
+// ---------- gamepad on menus: d-pad moves focus, A presses, Start pauses ----------
+function padMenus() {
+  if (input.hit('pad:start')) {
+    if (state === 'play' || state === 'countdown') pause();
+    else if (state === 'paused') resume();
+  }
+  if (state === 'play' || state === 'countdown') return;
+  const screen = document.querySelector('.screen:not([hidden])');
+  if (!screen) return;
+  const items = [...screen.querySelectorAll('button:not([hidden]), summary, input, select')].filter((b) => b.offsetParent);
+  if (!items.length) return;
+  const i = items.indexOf(document.activeElement);
+  const move = (d) => {
+    const n = items[(Math.max(0, i) + d + items.length) % items.length];
+    n.focus();
+    n.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
+  if (input.hit('pad:down') || input.hit('pad:right')) move(i < 0 ? 0 : 1);
+  if (input.hit('pad:up') || input.hit('pad:left')) move(i < 0 ? 0 : -1);
+  if (input.hit('pad:jump')) {
+    if (i >= 0) items[i].click();
+    else if (state === 'menu') $('#btn-continue').click();
+    else if (state === 'results') $('#btn-retry').click();
+  }
+  if (input.hit('pad:slide') && (state === 'paused')) resume();
+}
 
 // ---------- vehicles each frame ----------
 let stallToast = 0;
@@ -740,7 +998,7 @@ function footEffects(dt) {
     if (e === 'Zipline') { sound.click(); tip('zip', 'Jump to let go early and keep your speed.'); }
     if (e === 'Climb') tip('ladder', 'Ladders run all the way to the roof. Jump to let go.');
     if (e === 'Splash') { particles.splash(p.pos.x, -1.6, p.pos.z, 1); sound.splash(1); }
-    if (e !== 'Climb' && e !== 'Mantle' && e !== 'Splash') hud.toast(e, 700);
+    if (e !== 'Climb' && e !== 'Mantle' && e !== 'Splash' && !(combo.live && combo.mult > 1)) hud.toast(e, 700);
   }
   p.events.length = 0;
   // Contextual tips.
@@ -761,6 +1019,8 @@ function frame(now) {
   if (slowmo > 0) { slowmo -= realDt; timeScale = 0.35; } else timeScale += (1 - timeScale) * Math.min(1, realDt * 6);
   const dt = realDt * timeScale;
   elapsed += dt;
+  input.pollPad(realDt);
+  padMenus();
   W.update(dt, elapsed);
   sky.apply(realDt, elapsed);
   W.setWindowLights(sky.lights);
@@ -772,11 +1032,14 @@ function frame(now) {
 
   let speed3 = 0;
   if (state === 'menu') {
-    menuT += realDt * 0.05;
-    const r = 210;
-    camera.position.set(Math.sin(menuT) * r, 70 + Math.sin(menuT * 0.7) * 12, Math.cos(menuT) * r);
-    camera.lookAt(0, 38, 0);
-    sun.target.position.set(0, 0, 0);
+    menuT += realDt;
+    const u = (menuT / tour.duration) % 1;
+    tour.pos.getPointAt(u, camera.position);
+    tour.look.getPointAt(u, _look);
+    camera.lookAt(_look);
+    camera.fov += (62 - camera.fov) * Math.min(1, realDt * 3);
+    camera.updateProjectionMatrix();
+    sun.target.position.copy(camera.position).setY(0);
   } else {
     input.update();
     const look = input.enabled ? input.consumeLook() : [0, 0];
@@ -795,12 +1058,14 @@ function frame(now) {
     } else if (state === 'play') {
       if (driving) {
         stepVehicle(dt, false);
+        updateCombo(dt);
         if (input.useHit) {
           if (active && active.vehicle) hud.toast('Finish the run, or press R to restart', 1200);
           else exitVehicle();
         }
       } else {
         player.update(dt, input, rig.yaw);
+        updateCombo(dt);
         footEffects(dt);
         if (player.pos.y < -1.4) {
           const back = active ? runner.respawn : player.safe;
@@ -840,7 +1105,7 @@ function frame(now) {
       if (!active) {
         const got = parcels.update(dt, elapsed, focus, driving ? 4 : 1.8);
         if (got >= 0) {
-          store.set('parcels', [...parcels.collected]);
+          store.set(parcelKey, [...parcels.collected]);
           sound.pickup();
           particles.confetti(focus.x, focus.y + 1.5, focus.z);
           hud.toast(`Postcard ${parcels.count} / ${parcels.total} · ${parcels.spots[got][3]}`, 1800);
@@ -933,6 +1198,39 @@ function frame(now) {
   sky.follow(camera);
   input.endFrame();
   renderer.render(scene, camera);
+  perfTick(now, realDt);
+}
+
+// ---------- performance: FPS readout and automatic resolution ----------
+const perf = { frames: 0, t0: performance.now(), worst: 0, sum: 0, n: 0, cool: 0 };
+function perfTick(now, dt) {
+  perf.frames++;
+  perf.worst = Math.max(perf.worst, dt);
+  perf.sum += dt; perf.n++;
+  const span = (now - perf.t0) / 1000;
+  if (span < 0.5) return;
+  const fps = perf.frames / span;
+  if (S.showFps) {
+    const i = renderer.info.render;
+    $('#perf').textContent = `${fps.toFixed(0)} fps  ${(1000 / fps).toFixed(1)} ms  worst ${(perf.worst * 1000).toFixed(0)} ms\n`
+      + `${i.calls} draws  ${(i.triangles / 1000).toFixed(0)}k tris  res ×${renderer.getPixelRatio().toFixed(2)}\n`
+      + `detail chunks ${details.active ? details.active.size : 0}`;
+  }
+  // Auto resolution: drop the render scale when frames are slow, creep back up when there's headroom.
+  perf.cool -= span;
+  if (S.autoRes && document.visibilityState === 'visible' && perf.cool <= 0 && state !== 'paused') {
+    const avg = perf.sum / perf.n;
+    let next = dynRatio;
+    if (avg > 1 / 45 && dynRatio > 0.6) next = Math.max(0.6, dynRatio - 0.15);
+    else if (avg < 1 / 57 && dynRatio < maxRatio) next = Math.min(maxRatio, dynRatio + 0.1);
+    if (next !== dynRatio) {
+      dynRatio = next;
+      renderer.setPixelRatio(dynRatio);
+      resize();
+      perf.cool = 2.5;
+    }
+  }
+  perf.frames = 0; perf.t0 = now; perf.worst = 0; perf.sum = 0; perf.n = 0;
 }
 
 renderMenu();
@@ -941,8 +1239,17 @@ loading.hidden = true;
 showScreen('#menu');
 requestAnimationFrame(frame);
 
+// Installable app on the public site: manifest, home-screen icon and offline cache.
+if (/\.github\.io$/.test(location.hostname)) {
+  const add = (rel, href) => { const l = document.createElement('link'); l.rel = rel; l.href = href; document.head.appendChild(l); };
+  add('manifest', 'manifest.webmanifest');
+  add('apple-touch-icon', 'icons/apple-touch-icon.png');
+  add('icon', 'icons/icon.svg');
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
 // Handy for testing from the console.
 window.__fcr = { sun,
   W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene, V,
-  details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
+  combo, D, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
 };

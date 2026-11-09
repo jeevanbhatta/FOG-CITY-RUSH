@@ -17,6 +17,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,6 +25,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -r tools/requirements.txt
       - run: python3 tools/fetch_osm.py
+        timeout-minutes: 25
       - run: python3 tools/build_map.py
       - name: Commit map data
         run: |

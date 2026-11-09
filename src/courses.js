@@ -5,8 +5,9 @@ import { BRIDGE } from './world.js';
 // Each checkpoint resolves to a point in the world; the run is timed from the
 // countdown to the last ring.
 
-export function defineCourses(W, V) {
-  const f = W.landmarks.ferry;
+export function defineCourses(W, V, D) {
+  const f = W.landmarks.hub;
+  const hb = f.balcony;
   const bi = W.landmarks.bridgeInfo;
   const plaza = f.plaza;
   const ground = (x, z) => ({ kind: 'ground', x, z });
@@ -16,7 +17,9 @@ export function defineCourses(W, V) {
   const bridgeShore = bi.at(0, 0);
   const toBridge = [bridgeShore[0] - plaza[0], bridgeShore[1] - plaza[1]];
   const tbl = Math.hypot(...toBridge);
-  const ux = toBridge[0] / tbl, uz = toBridge[1] / tbl;
+  // The sprint runs away from the bridge (Embarcadero) or toward it (Crissy Field).
+  const sgn = D.sprintAway ? 1 : -1;
+  const ux = (sgn * toBridge[0]) / tbl, uz = (sgn * toBridge[1]) / tbl;
   // Inland is "toward the plaza from the tower", i.e. along the tower's plaza face normal.
   const ix = f.face[0], iz = f.face[1];
 
@@ -25,12 +28,11 @@ export function defineCourses(W, V) {
     sprint.push(ground(plaza[0] - ux * d + ix * 8, plaza[1] - uz * d + iz * 8));
   }
 
-  const tower = [
-    ground(plaza[0], plaza[1]),
-    top(f.face[0] * 7.6, 50.1, f.face[1] * 7.6),
-    top(f.face[0] * 5.6, 64.1, f.face[1] * 5.6),
-    top(f.face[0] * 3.6, 72.1, f.face[1] * 3.6),
-  ];
+  const tower = [ground(plaza[0], plaza[1])];
+  for (const [r, y] of f.climb) tower.push(top(f.face[0] * r, y, f.face[1] * r));
+  const tl = Math.hypot(...bi.at(BRIDGE.towers[0], 0));
+  const [bx0, bz0] = bi.at(BRIDGE.towers[0], 0);
+  const balcony = top((bx0 / tl) * hb.r, hb.y + 0.1, (bz0 / tl) * hb.r);
 
   const [d0x, d0z] = bi.at(-BRIDGE.rampLen + 30, 0);
   const [d1x, d1z] = bi.at(120, 0);
@@ -44,16 +46,16 @@ export function defineCourses(W, V) {
     top(anx, bi.anchorTop + 0.05, anz),
     top(c1x, bi.cableY(180) + 0.75, c1z),
     top(t1x, bi.towerTop + 0.05, t1z),
-    top((t1x / Math.hypot(t1x, t1z)) * 3.6, 72.1, (t1z / Math.hypot(t1x, t1z)) * 3.6),
+    balcony,
   ];
 
   // Car: out along The Embarcadero toward the bridge and back on the other carriageway.
   const race = [];
   if (V && V.carStart) {
     const nodes = [];
-    for (const r of W.map.roads) if (r.n && /embarcadero/i.test(r.n)) for (const q of r.p) nodes.push(q);
+    for (const r of W.map.roads) if (r.n && D.boulevard.test(r.n)) for (const q of r.p) nodes.push(q);
     let cur = [V.carStart.pos.x, V.carStart.pos.z];
-    let dir = [ux, uz];
+    let dir = [sgn * ux, sgn * uz];
     const out = [cur];
     for (let k = 0; k < 6; k++) {
       let best = null, bestScore = Infinity;
@@ -89,7 +91,7 @@ export function defineCourses(W, V) {
     fly.push(top(ux2, 90, uz2));
     const [ux3, uz3] = bi.at(BRIDGE.towers[1], -40);
     fly.push(top(ux3, 175, uz3));
-    fly.push(top(0, 125, 0));
+    fly.push(top(0, f.top + 45, 0));
     fly.push(top(d.pos.x + hx * 160, 1.5, d.pos.z + hz * 160));
   }
 
@@ -122,6 +124,18 @@ export function defineCourses(W, V) {
       }
       drop.push(ground(plaza[0], plaza[1]));
       W.landmarks.tallest = { x: cx, z: cz, y: tall.y1, name: tall.name };
+    } else {
+      // No skyscrapers here: leap off the bridge tower and land on the first good stretch of shore.
+      const [sx, sz] = bi.at(BRIDGE.towers[0], 0);
+      const Dist = Math.hypot(plaza[0] - sx, plaza[1] - sz);
+      const ex = (plaza[0] - sx) / Dist, ez = (plaza[1] - sz) / Dist;
+      let land = Math.min(Dist, bi.towerTop * 1.8);
+      for (let d = 150; d < Dist; d += 10) {
+        if (W2.floorAt(sx + ex * d, sz + ez * d, 3, 0).solid) { land = Math.min(Dist, d + 50, bi.towerTop * 1.9); break; }
+      }
+      drop.push(top(sx, bi.towerTop + 0.05, sz));
+      for (const t of [0.3, 0.6]) drop.push(top(sx + ex * land * t, Math.max(14, bi.towerTop - (land * t) / 2.0), sz + ez * land * t));
+      drop.push(ground(sx + ex * land, sz + ez * land));
     }
   }
 
@@ -129,7 +143,11 @@ export function defineCourses(W, V) {
   // Run to the courier car, drive the waterfront, board the seaplane, climb over the skyline,
   // bail out and parachute onto the clock tower balcony.
   const relay = [];
-  if (V && V.cars[1] && V.dock && W.landmarks.tallest) {
+  const tallest = W.landmarks.tallest || (() => {
+    const [x, z] = bi.at(BRIDGE.towers[0], 0);
+    return { x, z, y: bi.towerTop };
+  })();
+  if (V && V.cars[1] && V.dock) {
     const car = V.cars[1].home.pos;
     relay.push(ground(plaza[0], plaza[1]));
     relay.push(ground(car.x, car.z));
@@ -138,50 +156,24 @@ export function defineCourses(W, V) {
       relay.push(race[2]);
     }
     relay.push(ground(V.dock.shore.x, V.dock.shore.z));
-    const T = W.landmarks.tallest;
+    const T = tallest;
     const [ox, oz] = bi.at(BRIDGE.towers[0], 0);
     relay.push(top(ox + (T.x - ox) * 0.5, 220, oz + (T.z - oz) * 0.5));
     relay.push(top(T.x, T.y + 45, T.z));
-    relay.push(top(f.face[0] * 3.6, 72.1, f.face[1] * 3.6));
+    relay.push(top(f.face[0] * hb.r, hb.y + 0.1, f.face[1] * hb.r));
   }
 
+  const T = D.text;
+  const C = (id, extra) => ({ id: D.courseIds + id, name: T[id][0], blurb: T[id][1], start: plaza, ...extra });
   return [
-    {
-      id: 'sprint', name: 'Embarcadero Sprint', difficulty: 'Easy',
-      blurb: 'Street-level dash up the waterfront from the Ferry Building plaza.',
-      points: sprint, start: plaza,
-    },
-    {
-      id: 'tower', name: 'Clock Tower Climb', difficulty: 'Medium',
-      blurb: 'Ladders and ledges to the balcony of the Ferry Building clock tower.',
-      points: tower, start: plaza,
-    },
-    {
-      id: 'bridge', name: 'Bay Bridge Run', difficulty: 'Hard',
-      blurb: 'Up the approach, onto the cable, over the tower, and zipline home.',
-      points: bridge, start: plaza,
-    },
-    {
-      id: 'drop', name: 'Skyline Drop', difficulty: 'Medium', ring: 2.2, pace: 18,
-      blurb: 'Jump off the tallest tower downtown and steer your parachute down to the Ferry Building.',
-      points: drop, start: plaza,
-    },
-    {
-      id: 'relay', name: 'Fog City Express', difficulty: 'Hard', ring: 2.6, pace: 16, relay: true,
-      blurb: 'The full delivery: run to the car, drive the waterfront, fly over the skyline, bail out and parachute onto the clock tower.',
-      points: relay, start: plaza,
-    },
-    {
-      id: 'race', name: 'Waterfront Grand Prix', difficulty: 'Medium', vehicle: 'car', ring: 2.6,
-      blurb: 'Race a car out along The Embarcadero toward the bridge and back.',
-      points: race, start: plaza,
-    },
-    {
-      id: 'flyer', name: 'Under the Bay Bridge', difficulty: 'Hard', vehicle: 'plane', ring: 4.2,
-      blurb: 'Seaplane run: under the deck, round the anchorage, over the clock tower, splash down.',
-      points: fly, start: plaza,
-    },
-  ].filter((c) => c.points.length > 1);
+    C('sprint', { difficulty: 'Easy', points: sprint }),
+    C('tower', { difficulty: 'Medium', points: tower }),
+    C('bridge', { difficulty: 'Hard', points: bridge }),
+    C('drop', { difficulty: 'Medium', ring: 2.2, pace: 18, points: drop, kind: 'Parachute' }),
+    C('relay', { difficulty: 'Hard', ring: 2.6, pace: 16, relay: true, points: relay }),
+    C('race', { difficulty: 'Medium', vehicle: 'car', ring: 2.6, points: race }),
+    C('flyer', { difficulty: 'Hard', vehicle: 'plane', ring: 4.2, points: fly }),
+].filter((c) => c.points.length > 1);
 }
 
 // Find a standable spot near (x,z) at street level.

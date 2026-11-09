@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1f3440"/>
+  <rect y="300" width="512" height="212" fill="#2c4a58"/>
+  <path d="M0 300 C120 260 200 290 256 270 S400 250 512 280 V300 H0z" fill="#cdd5d8" opacity=".35"/>
+  <g fill="#ff6a2b">
+    <rect x="120" y="120" width="26" height="250"/>
+    <rect x="366" y="120" width="26" height="250"/>
+    <rect x="110" y="150" width="46" height="12"/><rect x="356" y="150" width="46" height="12"/>
+    <rect x="110" y="210" width="46" height="12"/><rect x="356" y="210" width="46" height="12"/>
+    <rect x="40" y="300" width="432" height="14"/>
+  </g>
+  <path d="M30 210 Q80 290 133 125 Q256 330 379 125 Q430 290 482 210" fill="none" stroke="#ff6a2b" stroke-width="7"/>
+  <text x="256" y="452" text-anchor="middle" font-family="Arial Narrow, Arial, sans-serif" font-weight="900" font-size="92" fill="#f4efe6" letter-spacing="2">FCR</text>
+</svg>

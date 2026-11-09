@@ -58,6 +58,9 @@ export class Ghost {
 
   hide() { this.group.visible = false; }
 
+  // Your own ghost is pale blue; a friend's is orange.
+  setRival(on) { this.mat.color.set(on ? 0xff8a4b : 0xbfe6ff); this.mat.opacity = on ? 0.5 : 0.38; }
+
   update(dt, t) {
     const d = this.data;
     if (!d) return;

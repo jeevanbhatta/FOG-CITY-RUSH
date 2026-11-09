@@ -205,16 +205,21 @@ function styleFor(b, i) {
 
 // ---------- the world ----------
 
+// The district's suspension bridge. Filled in from the district by buildWorld().
 export const BRIDGE = {
+  style: 'bay',
   deckY: 58,
   rampLen: 460,
   halfWidth: 12,
   towers: [354, 1058],
   centreU: 1400,
   towerTop: 152,
+  endTop: 76,
+  struts: [[90, 94], [122, 126]],
 };
 
-export function buildWorld(map, scene) {
+export function buildWorld(map, scene, D) {
+  Object.assign(BRIDGE, D.bridge);
   const world = new CollisionWorld(24);
   const group = new THREE.Group();
   scene.add(group);
@@ -261,7 +266,7 @@ export function buildWorld(map, scene) {
 
   const meta = map.meta;
   const bounds = meta.bounds; // minX, minZ, maxX, maxZ
-  const bridge = bridgeFrame(meta);
+  const bridge = bridgeFrame(meta, D.bridge.fallback);
   const corridor = (x, z) => {
     // Distance-along (u) and across (v) the bridge axis.
     const dx = x - bridge.sx, dz = z - bridge.sz;
@@ -307,15 +312,15 @@ export function buildWorld(map, scene) {
   }
 
   // ----- Buildings -----
-  const ferry = { x: 0, z: 0 };
+  // The hand-built hub landmark stands at the origin and replaces whatever OSM has there.
+  const hubClear = D.hub === 'palace' ? { r: 26, h: 0 } : { r: 14, h: 28 };
   const walls = { masonry: new TiledBatches(), glass: new TiledBatches() };
   const roofs = new TiledBatches();
   const buildingSolids = [];
   map.buildings.forEach((b, i) => {
     const y0 = b.b || 0;
     const [cx, cz] = centroid(b.p);
-    // The hand-built clock tower replaces whatever OSM has at its spot.
-    if (Math.hypot(cx - ferry.x, cz - ferry.z) < 14 && b.h > 28) return;
+    if (Math.hypot(cx, cz) < hubClear.r && b.h > hubClear.h) return;
     // Clear buildings that would poke through the bridge approach.
     // Sample along every wall, so buildings that straddle the corridor are caught too.
     let blocked = false;
@@ -353,7 +358,9 @@ export function buildWorld(map, scene) {
   const steel = new Batch();
   const stone = new Batch();
   const ladders = [];
-  landmarks.ferry = buildFerryTower(world, stone, mats, tex, group, ladders, map);
+  landmarks.hub = D.hub === 'palace'
+    ? buildPalace(world, stone, mats, group, ladders)
+    : buildFerryTower(world, stone, mats, tex, group, ladders, map);
   landmarks.bridgeInfo = buildBridge(world, bridge, steel, stone, mats, group, ladders, deckYAt);
   {
     const m1 = new THREE.Mesh(steel.geometry(), mats.steel);
@@ -397,7 +404,7 @@ export function buildWorld(map, scene) {
   if (zipMeshes) group.add(zipMeshes);
 
   // ----- Palms along the waterfront -----
-  addPalms(map, world, group);
+  addPalms(map, world, group, D.boulevard);
 
   // ----- Water, sky, fog -----
   const water = new THREE.Mesh(
@@ -434,7 +441,7 @@ export function buildWorld(map, scene) {
 }
 
 // Axis of the Bay Bridge: shore anchor point and unit direction toward Yerba Buena Island.
-function bridgeFrame(meta) {
+function bridgeFrame(meta, fallback) {
   let sx, sz, dx, dz;
   if (meta.bridge) {
     [sx, sz] = meta.bridge.shore;
@@ -444,8 +451,8 @@ function bridgeFrame(meta) {
     const [mx, mz] = meta.mPerDeg;
     const o = meta.origin;
     const P = (lat, lon) => [(lon - o.lon) * mx, -(lat - o.lat) * mz];
-    [sx, sz] = P(37.7877, -122.3876);
-    const [ex, ez] = P(37.8099, -122.3640);
+    [sx, sz] = P(...fallback[0]);
+    const [ex, ez] = P(...fallback[1]);
     dx = ex - sx; dz = ez - sz;
   }
   const l = Math.hypot(dx, dz);
@@ -454,9 +461,10 @@ function bridgeFrame(meta) {
 }
 
 function buildBridge(world, B, steel, stone, mats, group, ladders, deckYAt) {
-  const steelC = new THREE.Color('#b4bcc2');
-  const darkC = new THREE.Color('#7f888f');
-  const stoneC = new THREE.Color('#bdb6a8');
+  const golden = BRIDGE.style === 'golden';
+  const steelC = new THREE.Color(golden ? '#c0442c' : '#b4bcc2');
+  const darkC = new THREE.Color(golden ? '#55585b' : '#7f888f');
+  const stoneC = new THREE.Color(golden ? '#c9c1b1' : '#bdb6a8');
   const at = (u, v) => [B.sx + B.dx * u + B.px * v, B.sz + B.dz * u + B.pz * v];
   const hw = BRIDGE.halfWidth;
 
@@ -532,7 +540,7 @@ function buildBridge(world, B, steel, stone, mats, group, ladders, deckYAt) {
       const [fx, fz] = at(tu, s * hw);
       ladders.push({ x: fx, z: fz, nx: -B.px * s, nz: -B.pz * s, tx: B.dx, tz: B.dz, y0: BRIDGE.deckY, y1: T });
     }
-    for (const [y0, y1] of [[90, 94], [122, 126], [T - 4, T]]) {
+    for (const [y0, y1] of [...BRIDGE.struts, [T - 4, T]]) {
       const [cx, cz] = at(tu, 0);
       steel.box(cx, y0, cz, B.dx, B.dz, 2.5, hw + 5, y1, steelC);
       world.addBox(cx, cz, B.dx, B.dz, 2.5, hw + 5, y0, y1, { kind: 'bridge' });
@@ -543,21 +551,23 @@ function buildBridge(world, B, steel, stone, mats, group, ladders, deckYAt) {
     world.addBox(px, pz, B.dx, B.dz, 9, hw + 9, -12, 2, { kind: 'bridge' });
   }
 
-  // Centre anchorage at the end of the playable span.
+  // End block (the centre anchorage on the Bay Bridge) at the end of the playable span.
+  const endTop = BRIDGE.endTop;
   {
     const cu = BRIDGE.centreU + 22;
     const [cx, cz] = at(cu, 0);
-    stone.box(cx, -10, cz, B.dx, B.dz, 22, hw + 16, 76, stoneC);
-    world.addBox(cx, cz, B.dx, B.dz, 22, hw + 16, -10, 76, { kind: 'bridge' });
+    stone.box(cx, -10, cz, B.dx, B.dz, 22, hw + 16, endTop, stoneC);
+    world.addBox(cx, cz, B.dx, B.dz, 22, hw + 16, -10, endTop, { kind: 'bridge' });
     const [lx, lz] = at(BRIDGE.centreU, 0);
-    ladders.push({ x: lx, z: lz, nx: -B.dx, nz: -B.dz, tx: B.px, tz: B.pz, y0: BRIDGE.deckY, y1: 76 });
+    ladders.push({ x: lx, z: lz, nx: -B.dx, nz: -B.dz, tx: B.px, tz: B.pz, y0: BRIDGE.deckY, y1: endTop });
   }
 
   // Main cables: walkable. Parabolic sag between saddles.
   const spans = [
     [0, anchorTop - 0.3, BRIDGE.towers[0], T + 0.6, 7],
-    [BRIDGE.towers[0], T + 0.6, BRIDGE.towers[1], T + 0.6, 88],
-    [BRIDGE.towers[1], T + 0.6, BRIDGE.centreU + 4, 76, 7],
+    // Main span: the cable dips to a few metres above the deck at mid-span.
+    [BRIDGE.towers[0], T + 0.6, BRIDGE.towers[1], T + 0.6, T + 0.6 - BRIDGE.deckY - 6.6],
+    [BRIDGE.towers[1], T + 0.6, BRIDGE.centreU + 4, endTop, 7],
   ];
   const cableY = (u) => {
     for (const [u0, y0, u1, y1, sag] of spans) {
@@ -594,11 +604,12 @@ function buildBridge(world, B, steel, stone, mats, group, ladders, deckYAt) {
       cableGeoms.push(g);
     }
   }
-  const cables = new THREE.Mesh(mergeGeometries(cableGeoms.map((g) => g.toNonIndexed ? g.toNonIndexed() : g)), mats.cable);
+  const cables = new THREE.Mesh(mergeGeometries(cableGeoms.map((g) => g.toNonIndexed ? g.toNonIndexed() : g)),
+    golden ? new THREE.MeshStandardMaterial({ color: 0xc0442c, roughness: 0.5, metalness: 0.3 }) : mats.cable);
   cables.castShadow = true;
   group.add(cables);
 
-  return { at, cableY, deckY: BRIDGE.deckY, anchorTop, towerTop: T };
+  return { at, cableY, deckY: BRIDGE.deckY, anchorTop, towerTop: T, endTop };
 }
 
 function buildFerryTower(world, stone, mats, tex, group, ladders, map) {
@@ -650,7 +661,93 @@ function buildFerryTower(world, stone, mats, tex, group, ladders, map) {
     }
     break;
   }
-  return { x: 0, z: 0, top: 80, plaza: [sx * 40, sz * 40], face: [sx, sz], at };
+  return {
+    x: 0, z: 0, top: 80, plaza: [sx * 40, sz * 40], face: [sx, sz], at,
+    // Course checkpoints up the plaza face, then the balcony that the signature zipline lands on.
+    climb: [[7.6, 50.1], [5.6, 64.1], [3.6, 72.1]],
+    balcony: { r: 3.6, y: 72, zipR: 3.7, name: 'Clock tower balcony' },
+  };
+}
+
+// Palace of Fine Arts rotunda: an open octagon of piers carrying a colonnade ring,
+// a drum and a terraced dome you can mantle up, terrace by terrace.
+function buildPalace(world, stone, mats, group, ladders) {
+  const sand = new THREE.Color('#dcc6a2');
+  const trim = new THREE.Color('#cdb48c');
+  const dome = new THREE.Color('#c27f5c');
+  const ngon = (r, n = 8, rot = Math.PI / 8) => {
+    const p = [];
+    for (let k = 0; k < n; k++) {
+      const a = rot + (k / n) * Math.PI * 2;
+      p.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    return p;
+  };
+  const solid = (poly, y0, y1, color, name = 'Palace of Fine Arts') => {
+    stone.prism(poly, y0, y1, color, { bottom: y0 > 0.5 });
+    world.addSolid(poly, y0, y1, { kind: 'building', name });
+  };
+  // Annulus as eight trapezoids (the collision world wants simple prisms).
+  const ring = (rOut, rIn, y0, y1, color) => {
+    const o = ngon(rOut), i = ngon(rIn);
+    for (let k = 0; k < 8; k++) {
+      const j = (k + 1) % 8;
+      solid([o[k], o[j], i[j], i[k]].reverse(), y0, y1, color);
+    }
+  };
+  // Two low steps around the base.
+  solid(ngon(23), 0, 0.5, trim);
+  solid(ngon(21.5), 0.5, 1.0, trim);
+  // Piers on the octagon corners, outer face flush with the entablature.
+  const piers = [];
+  for (let k = 0; k < 8; k++) {
+    const a = Math.PI / 8 + (k / 8) * Math.PI * 2;
+    const dx = Math.cos(a), dz = Math.sin(a);
+    const cx = dx * 15.9, cz = dz * 15.9;
+    stone.box(cx, 1, cz, dx, dz, 1.6, 1.6, 22, sand, {});
+    world.addBox(cx, cz, dx, dz, 1.6, 1.6, 1, 22, { kind: 'building', name: 'Palace of Fine Arts' });
+    piers.push({ dx, dz, cx, cz });
+  }
+  // Paired columns between the piers (visual only; you run between them).
+  const colGeo = [];
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2 + Math.PI / 4;
+    for (const off of [-3, 3]) {
+      const tx = -Math.sin(a), tz = Math.cos(a);
+      const x = Math.cos(a) * 15.6 + tx * off, z = Math.sin(a) * 15.6 + tz * off;
+      const g = new THREE.CylinderGeometry(0.55, 0.65, 21, 10);
+      g.translate(x, 11.5, z);
+      colGeo.push(g);
+    }
+  }
+  const cols = new THREE.Mesh(mergeGeometries(colGeo), new THREE.MeshStandardMaterial({ color: 0xd9c4a0, roughness: 0.85 }));
+  cols.castShadow = cols.receiveShadow = true;
+  group.add(cols);
+  // Entablature ring you can stand on, then the drum.
+  ring(17.5, 12.2, 22, 25, trim);
+  ring(12.8, 10.4, 25, 31, sand);
+  // Terraced dome: each riser is under the mantle reach.
+  const terraces = [[11.6, 31, 33.4], [10.0, 33.4, 35.8], [8.2, 35.8, 38.2], [6.0, 38.2, 40.6], [3.6, 40.6, 43]];
+  for (const [r, y0, y1] of terraces) solid(ngon(r, 16, 0), y0, y1, dome);
+  // Finial.
+  const fin = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 8), new THREE.MeshStandardMaterial({ color: 0xb98f4e, roughness: 0.5, metalness: 0.4 }));
+  fin.position.set(0, 44.6, 0);
+  group.add(fin);
+
+  // The plaza faces south-west, toward the colonnade path and the city.
+  const face = [-Math.SQRT1_2, Math.SQRT1_2];
+  // Ladder up the outer face of the pier nearest the plaza, then up the drum.
+  let best = piers[0];
+  for (const p of piers) if (p.dx * face[0] + p.dz * face[1] > best.dx * face[0] + best.dz * face[1]) best = p;
+  const { dx, dz } = best;
+  ladders.push({ x: dx * 17.55, z: dz * 17.55, nx: dx, nz: dz, tx: -dz, tz: dx, y0: 1, y1: 25 });
+  ladders.push({ x: dx * 12.85, z: dz * 12.85, nx: dx, nz: dz, tx: -dz, tz: dx, y0: 25, y1: 31 });
+  const at = (u, v) => [dx * u - dz * v, dz * u + dx * v];
+  return {
+    x: 0, z: 0, top: 45, plaza: [face[0] * 46, face[1] * 46], face: [dx, dz], at,
+    climb: [[15.2, 25.1], [12.0, 31.1], [0, 43.1]],
+    balcony: { r: 0, y: 43, zipR: 1.6, name: 'Top of the Palace dome' },
+  };
 }
 
 function ladderMesh(ladders, mat) {
@@ -740,10 +837,13 @@ function buildZiplines(world, items, landmarks) {
   const bi = landmarks.bridgeInfo;
   if (bi) {
     const [tx, tz] = bi.at(BRIDGE.towers[0] - 2, 0);
-    // Land on the clock tower's upper balcony (the 72 m roof, outside the spire).
+    // Land on the hub's top platform (the clock tower's balcony, outside the spire).
+    const hb = landmarks.hub.balcony;
     const l = Math.hypot(tx, tz);
-    const ex = (tx / l) * 3.7, ez = (tz / l) * 3.7;
-    push(tx, bi.towerTop + 2.7, tz, ex, 72 + 2.55, ez, 'signature');
+    const ex = (tx / l) * hb.zipR, ez = (tz / l) * hb.zipR;
+    push(tx, bi.towerTop + 2.7, tz, ex, hb.y + 2.55, ez, 'signature');
+    const Z = zips[zips.length - 1];
+    if (Z.len > 1500) Z.max = 58; // a long line: let it run faster
   }
   return zips;
 }
@@ -772,10 +872,10 @@ function ziplineMeshes(zips, mats) {
   return grp;
 }
 
-function addPalms(map, world, group) {
+function addPalms(map, world, group, boulevard) {
   const spots = [];
   for (const r of map.roads) {
-    if (!r.n || !/embarcadero/i.test(r.n)) continue;
+    if (!r.n || !boulevard.test(r.n)) continue;
     let carry = 0;
     for (let i = 1; i < r.p.length; i++) {
       const a = r.p[i - 1], b = r.p[i];

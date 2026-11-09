@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Fog City Rush</title>
+<meta name="theme-color" content="#1f3440">
+<meta name="description" content="Parkour, street racing, seaplanes and parachutes on San Francisco's real waterfront, built from OpenStreetMap.">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -36,37 +38,107 @@
   /* ---------- screens ---------- */
   .screen { position: fixed; inset: 0; display: flex; z-index: 10; }
   #menu {
-    background: linear-gradient(90deg, rgba(222, 229, 231, 0.94) 0%, rgba(222, 229, 231, 0.82) 38%, rgba(222, 229, 231, 0) 70%);
+    background:
+      linear-gradient(90deg, rgba(222, 229, 231, 0.95) 0%, rgba(222, 229, 231, 0.84) 34%, rgba(222, 229, 231, 0.25) 58%, rgba(222, 229, 231, 0) 72%);
     padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
     padding-block: max(20px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-bottom, 0px));
-    overflow-y: auto; touch-action: pan-y;
+    overflow-y: auto; overflow-x: hidden; touch-action: pan-y;
   }
-  .menu-inner { width: min(560px, 100%); display: flex; flex-direction: column; gap: 22px; padding-left: clamp(0px, 3vw, 40px); }
+  .menu-inner { width: min(600px, 100%); display: flex; flex-direction: column; gap: 22px; padding-left: clamp(0px, 3vw, 40px); padding-bottom: 28px; }
   .eyebrow { font: 600 0.82rem/1 var(--body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--steel); display: flex; gap: 10px; flex-wrap: wrap; }
   .eyebrow b { color: var(--bay); font-weight: 600; }
+  .hero { display: grid; gap: 16px; }
   h1 {
     margin: 0; font: 900 clamp(4rem, 13vw, 8.6rem)/0.8 var(--display); letter-spacing: -0.01em;
     text-transform: uppercase; color: var(--bay); text-wrap: balance;
   }
-  h1 span { display: block; }
-  h1 .rush { color: var(--signal); }
-  .lede { margin: 0; max-width: 46ch; font-size: 1.06rem; color: #34495a; }
+  h1 span { display: block; animation: rise 0.8s cubic-bezier(.2,.8,.2,1) both; }
+  h1 .w2 { animation-delay: 0.08s; }
+  h1 .rush { color: var(--signal); animation-delay: 0.16s; position: relative; width: max-content; }
+  h1 .rush::after { content: ""; position: absolute; left: 0.04em; right: 0.04em; bottom: -0.06em; height: 0.07em; background: var(--signal);
+    transform-origin: left; animation: wipe 0.9s 0.45s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(0.25em); } to { opacity: 1; transform: none; } }
+  @keyframes wipe { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .lede { margin: 0; max-width: 48ch; font-size: 1.06rem; color: #34495a; }
+  .cta { gap: 10px; }
+  .btn.big { padding: 13px 22px 12px; display: grid; justify-items: start; gap: 4px; font-size: 1.55rem; box-shadow: 0 8px 22px rgba(255, 106, 43, 0.35); }
+  .btn.big .cta-sub { font: 600 0.78rem/1 var(--body); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.9; }
+  .btn.big .cta-sub:empty { display: none; }
+  .progress { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 800 1rem/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bay); }
+  .progress span { display: inline-flex; align-items: center; gap: 6px; }
+  .progress i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 
-  #course-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .block { display: grid; gap: 10px; }
+  .label { font: 600 0.78rem/1 var(--body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--steel); }
+  .districts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .district { text-align: left; border: 0; border-radius: 4px; padding: 14px 16px 13px; display: grid; gap: 5px; position: relative; overflow: hidden;
+    background: rgba(255, 255, 255, 0.55); box-shadow: inset 0 0 0 1px rgba(31, 52, 64, 0.12); transition: background 0.15s, transform 0.15s; }
+  .district:hover { background: rgba(255, 255, 255, 0.85); transform: translateY(-2px); }
+  .district .d-name { font: 900 1.55rem/0.95 var(--display); text-transform: uppercase; }
+  .district .d-tag { font-size: 0.9rem; color: #3e5260; }
+  .district .d-state { font: 600 0.72rem/1 var(--body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--steel); }
+  .district[aria-pressed="true"] { background: var(--bay); color: #eef2f3; box-shadow: none; }
+  .district[aria-pressed="true"] .d-tag, .district[aria-pressed="true"] .d-state { color: #c8d4da; }
+  .district::after { content: ""; position: absolute; right: -18px; bottom: -18px; width: 90px; height: 90px; opacity: 0.16;
+    background: radial-gradient(circle at 70% 70%, var(--signal), transparent 65%); }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tab { border: 0; background: transparent; padding: 7px 10px 6px; border-radius: 3px; font: 800 1rem/1 var(--display); letter-spacing: 0.07em; text-transform: uppercase; color: var(--steel); }
+  .tab[aria-selected="true"] { background: var(--bay); color: #eef2f3; }
+  .tab:hover:not([aria-selected="true"]) { color: var(--bay); background: rgba(255,255,255,0.5); }
+
+  #course-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
   .course {
-    width: 100%; text-align: left; display: grid; gap: 4px; padding: 14px 16px 13px;
-    border: 0; border-left: 4px solid transparent; border-radius: 3px; background: rgba(255, 255, 255, 0.62);
-    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+    width: 100%; height: 100%; text-align: left; display: grid; grid-template-rows: auto auto 1fr auto; gap: 6px; padding: 14px 16px 13px;
+    border: 0; border-top: 4px solid transparent; border-radius: 4px; background: rgba(255, 255, 255, 0.62);
+    transition: background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
   }
-  .course:hover, .course:focus-visible { background: rgba(255, 255, 255, 0.92); border-left-color: var(--signal); transform: translateX(3px); }
+  .course:hover, .course:focus-visible { background: rgba(255, 255, 255, 0.95); border-top-color: var(--signal); transform: translateY(-3px); box-shadow: 0 10px 24px rgba(31, 52, 64, 0.16); }
+  .c-kind { display: flex; align-items: center; gap: 7px; font: 600 0.72rem/1 var(--body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--steel); }
+  .c-kind svg { width: 18px; height: 18px; stroke: var(--signal); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .c-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  .c-name { font: 800 1.7rem/1 var(--display); text-transform: uppercase; letter-spacing: 0.01em; }
-  .c-diff { font: 600 0.72rem/1 var(--body); letter-spacing: 0.14em; text-transform: uppercase; padding: 4px 7px 3px; border-radius: 2px; background: var(--bay); color: #eef2f3; }
+  .c-name { font: 800 1.55rem/0.98 var(--display); text-transform: uppercase; letter-spacing: 0.01em; }
+  .c-diff { font: 600 0.68rem/1 var(--body); letter-spacing: 0.14em; text-transform: uppercase; padding: 4px 7px 3px; border-radius: 2px; background: var(--bay); color: #eef2f3; flex: none; }
   .c-diff[data-d="easy"] { background: #4f7a63; }
   .c-diff[data-d="hard"] { background: var(--signal); color: var(--signal-ink); }
-  .c-blurb { color: #3e5260; font-size: 0.96rem; }
-  .c-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.86rem; color: var(--steel); font-variant-numeric: tabular-nums; }
+  .c-blurb { color: #3e5260; font-size: 0.94rem; }
+  .c-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.84rem; color: var(--steel); font-variant-numeric: tabular-nums; }
   .c-best.gold { color: var(--gold); font-weight: 600; } .c-best.silver { color: var(--silver); font-weight: 600; } .c-best.bronze { color: var(--bronze); font-weight: 600; }
+  .medal-pips { display: inline-flex; gap: 3px; } .medal-pips i { width: 9px; height: 9px; border-radius: 50%; background: rgba(31,52,64,0.15); }
+  .medal-pips i.on.b { background: var(--bronze); } .medal-pips i.on.s { background: var(--silver); } .medal-pips i.on.g { background: var(--gold); }
+
+  .fold summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .fold summary::-webkit-details-marker { display: none; }
+  .fold summary::after { content: "+"; font: 800 1.2rem/1 var(--display); color: var(--steel); margin-left: auto; }
+  .fold[open] summary::after { content: "−"; }
+  .fold-val { font: 800 1rem/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bay); }
+  .fold > *:not(summary) { margin-top: 10px; }
+
+  /* Style combo meter */
+  #combo { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: 46%; transform: translateY(-50%); display: grid; justify-items: end; gap: 3px; text-align: right; }
+  .cb-mult { font: 900 3.4rem/0.85 var(--display); color: var(--signal); text-shadow: 0 2px 12px rgba(255,255,255,0.7); font-variant-numeric: tabular-nums; }
+  .cb-move { font: 800 1.15rem/1 var(--display); text-transform: uppercase; letter-spacing: 0.06em; color: var(--bay); text-shadow: 0 1px 6px rgba(255,255,255,0.8); }
+  .cb-bar { width: 110px; height: 4px; background: rgba(31, 52, 64, 0.2); border-radius: 2px; overflow: hidden; }
+  .cb-bar i { display: block; height: 100%; background: var(--signal); transform-origin: right; }
+  .cb-pts { font: 600 0.85rem/1 var(--body); color: var(--steel); font-variant-numeric: tabular-nums; text-shadow: 0 1px 4px rgba(255,255,255,0.8); }
+  #combo.bump .cb-mult { animation: bump 0.25s ease-out; }
+  @keyframes bump { from { transform: scale(1.35); } to { transform: none; } }
+
+  /* Ghost-race challenges */
+  .challenge { display: grid; gap: 10px; background: var(--bay); color: #eef2f3; border-radius: 4px; padding: 14px 16px; border-left: 5px solid var(--signal);
+    animation: rise 0.6s 0.3s cubic-bezier(.2,.8,.2,1) both; }
+  .challenge b { color: #ffb08a; }
+  .challenge .btn.ghost { background: rgba(255,255,255,0.14); color: #eef2f3; }
+  #res-rival { font: 800 1.15rem/1.1 var(--display); text-transform: uppercase; letter-spacing: 0.04em; color: var(--bay); }
+  #res-rival.won { color: #2f7a4a; } #res-rival.lost { color: #b5432a; }
+  .share-box { display: grid; gap: 8px; }
+  .share-box input { font: inherit; padding: 7px 9px; border-radius: 3px; border: 1px solid #b7c2c7; background: #fff; color: var(--bay); min-width: 0; user-select: text; -webkit-user-select: text; }
+  .share-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+
+  /* Performance overlay */
+  #perf { position: fixed; left: max(8px, env(safe-area-inset-left, 0px)); bottom: calc(6px + env(safe-area-inset-bottom, 0px)); z-index: 25; pointer-events: none;
+    font: 600 0.72rem/1.35 ui-monospace, Menlo, Consolas, monospace; color: #eef2f3; background: rgba(31, 52, 64, 0.78); padding: 5px 8px; border-radius: 3px; white-space: pre; }
+  body.in-game #perf { bottom: auto; top: calc(120px + env(safe-area-inset-top, 0px)); }
 
   .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .btn {
@@ -193,7 +265,11 @@
 
   body.in-game #attribution { bottom: auto; top: calc(56px + env(safe-area-inset-top, 0px)); }
   @media (max-width: 640px) {
-    #menu { background: linear-gradient(180deg, rgba(222,229,231,0.92), rgba(222,229,231,0.88)); }
+    #menu { background: linear-gradient(180deg, rgba(222,229,231,0.55) 0, rgba(222,229,231,0.9) 260px, rgba(222,229,231,0.94)); }
+    #course-list { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: min(82vw, 300px); overflow-x: auto;
+      scroll-snap-type: x mandatory; padding-bottom: 6px; margin-right: -16px; padding-right: 16px; touch-action: pan-x pan-y; }
+    #course-list li { scroll-snap-align: start; }
+    .btn.big { font-size: 1.35rem; }
     .hud-tl { top: calc(84px + env(safe-area-inset-top, 0px)); }
     #hud-course { font-size: 0.95rem; }
     body.in-game #attribution { top: calc(60px + env(safe-area-inset-top, 0px)); }
@@ -204,7 +280,7 @@
     .tbtns { grid-template-columns: repeat(2, 64px); } .tbtns button { width: 64px; height: 64px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .course, #toast { transition: none; } #countdown.pop { animation: none; }
+    .course, #toast, .district { transition: none; } #countdown.pop, h1 span, h1 .rush::after { animation: none; }
   }
 </style>
 </head>
@@ -219,38 +295,61 @@
 
 <section id="menu" class="screen" hidden>
   <div class="menu-inner">
-    <div class="eyebrow"><b>Embarcadero</b><span>San Francisco</span><span>37.7955° N · 122.3937° W</span></div>
-    <h1><span>Fog</span><span>City</span><span class="rush">Rush</span></h1>
-    <p class="lede">San Francisco's waterfront is your playground. Run, wall-jump and climb across real rooftops, ride ziplines off the Bay Bridge, race along The Embarcadero, fly a seaplane under the deck and parachute off the skyline.</p>
-    <ul id="course-list"></ul>
-    <div class="row">
-      <button class="btn primary" id="btn-free">Free roam</button>
-      <button class="btn ghost" id="btn-settings">Settings</button>
-      <span class="parcel-count" id="parcel-count"></span>
+    <header class="hero">
+      <div class="eyebrow"><b id="district-name">Embarcadero</b><span>San Francisco</span><span id="district-coords"></span></div>
+      <h1 aria-label="Fog City Rush"><span class="w1">Fog</span><span class="w2">City</span><span class="rush">Rush</span></h1>
+      <p class="lede">The real San Francisco waterfront, built from OpenStreetMap. Run the rooftops, zipline off the bridges, race the boulevards, fly a seaplane under the deck and parachute down to the shore.</p>
+      <div class="challenge" id="challenge" hidden>
+        <span class="ch-text" id="challenge-text"></span>
+        <div class="row"><button class="btn primary" id="btn-challenge">Race their ghost</button><button class="btn ghost" id="btn-challenge-x">Dismiss</button></div>
+      </div>
+      <div class="row cta">
+        <button class="btn primary big" id="btn-continue"><span class="cta-label">Play</span><span class="cta-sub" id="continue-sub"></span></button>
+        <button class="btn" id="btn-free">Free roam</button>
+        <button class="btn ghost" id="btn-settings">Settings</button>
+      </div>
+      <div class="progress" id="progress" aria-label="Your progress"></div>
+    </header>
+
+    <div class="block">
+      <span class="label">District</span>
+      <div class="districts" id="district-cards"></div>
     </div>
-    <div class="char" aria-label="Character">
-      <span class="char-label">Play as</span>
-      <div class="chips" id="look-chips"></div>
-      <div class="swatches" id="skin-swatches" aria-label="Skin tone"></div>
+
+    <div class="block">
+      <div class="tabs" role="tablist" aria-label="Course type" id="course-tabs"></div>
+      <ul id="course-list"></ul>
     </div>
-    <span class="fine">Best times, ghosts and postcards are saved on this device.</span>
-    <div class="controls" aria-label="Controls">
-      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Run</div>
-      <div><kbd>Mouse</kbd> Look</div>
-      <div><kbd>Space</kbd> Jump · wall-jump</div>
-      <div><kbd>Shift</kbd> Sprint · wall-run</div>
-      <div><kbd>C</kbd> Slide · roll on landing</div>
-      <div><kbd>E</kbd> Grab zipline</div>
-      <div><kbd>F</kbd> Drive · fly · get out</div>
-      <div><kbd>Space</kbd> in mid-air Parachute</div>
-      <div><kbd>Space</kbd> Handbrake drift</div>
-      <div><kbd>Shift</kbd><kbd>C</kbd> Plane throttle</div>
-      <div><kbd>W</kbd><kbd>S</kbd> Climb · dive (<kbd>I</kbd> invert)</div>
-      <div><kbd>R</kbd> Restart run</div>
-      <div><kbd>Esc</kbd> Pause</div>
-      <div><kbd>M</kbd> Minimap</div>
-    </div>
-    <p class="touch-note">Drag the left side to run (push all the way to sprint), drag the right side to look. Buttons: jump, slide, grab. Walk up to a car or the seaplane and tap Drive or Fly; in the plane, the buttons become throttle up and down.</p>
+
+    <details class="block fold" id="fold-char">
+      <summary><span class="label">Character</span><span class="fold-val" id="char-val"></span></summary>
+      <div class="char">
+        <div class="chips" id="look-chips"></div>
+        <div class="swatches" id="skin-swatches" aria-label="Skin tone"></div>
+      </div>
+    </details>
+
+    <details class="block fold">
+      <summary><span class="label">How to play</span></summary>
+      <div class="controls" aria-label="Controls">
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Run</div>
+        <div><kbd>Mouse</kbd> Look</div>
+        <div><kbd>Space</kbd> Jump · wall-jump</div>
+        <div><kbd>Shift</kbd> Sprint · wall-run</div>
+        <div><kbd>C</kbd> Slide · roll on landing</div>
+        <div><kbd>E</kbd> Grab zipline</div>
+        <div><kbd>F</kbd> Drive · fly · get out</div>
+        <div><kbd>Space</kbd> in mid-air Parachute</div>
+        <div><kbd>Space</kbd> Handbrake drift</div>
+        <div><kbd>Shift</kbd><kbd>C</kbd> Plane throttle</div>
+        <div><kbd>W</kbd><kbd>S</kbd> Climb · dive (<kbd>I</kbd> invert)</div>
+        <div><kbd>R</kbd> Restart run</div>
+        <div><kbd>Esc</kbd> Pause</div>
+        <div><kbd>M</kbd> Minimap · <kbd>F3</kbd> FPS</div>
+      </div>
+      <p class="touch-note">Drag the left side to run (push all the way to sprint), drag the right side to look. Buttons: jump, slide, grab. Walk up to a car or the seaplane and tap Drive or Fly; in the plane, the buttons become throttle up and down.</p>
+      <p class="fine">Gamepads work too. Best times, ghosts and postcards are saved on this device.</p>
+    </details>
   </div>
 </section>
 
@@ -280,6 +379,8 @@
       <label class="set-row" for="set-invert-flight">Seaplane: W dives <input type="checkbox" id="set-invert-flight"></label>
       <label class="set-row" for="set-reduce">Reduce motion <input type="checkbox" id="set-reduce"></label>
       <label class="set-row" for="set-minimap">Show minimap <input type="checkbox" id="set-minimap"></label>
+      <label class="set-row" for="set-autores">Auto resolution (keeps it smooth) <input type="checkbox" id="set-autores"></label>
+      <label class="set-row" for="set-fps">Show FPS <input type="checkbox" id="set-fps"></label>
     </div>
     <div class="row"><button class="btn primary" id="btn-settings-done">Done</button></div>
   </div>
@@ -291,10 +392,18 @@
     <div class="big-time" id="res-time"></div>
     <div id="res-medal"></div>
     <div class="fine" id="res-best"></div>
+    <div class="fine" id="res-style"></div>
+    <div id="res-rival" hidden></div>
     <ol class="splits" id="res-splits" aria-label="Checkpoint splits"></ol>
     <div class="row">
       <button class="btn primary" id="btn-retry">Run again</button>
+      <button class="btn" id="btn-share">Challenge a friend</button>
       <button class="btn ghost" id="btn-results-menu">Menu</button>
+    </div>
+    <div class="share-box" id="share-box" hidden>
+      <label class="set-row" for="share-name">Name on your ghost <input id="share-name" maxlength="16" autocomplete="nickname" placeholder="Anonymous runner"></label>
+      <div class="share-link-row"><input id="share-link" readonly aria-label="Race link"><button class="btn" id="btn-copy">Copy</button></div>
+      <span class="fine" id="share-note">Anyone who opens this link races your best run as a ghost.</span>
     </div>
   </div>
 </section>
@@ -306,6 +415,13 @@
     <div class="stat"><b id="hud-speed">0</b><span>km/h</span></div>
     <div class="stat"><b id="hud-alt">0</b><span>Altitude m</span></div>
     <div class="stat" id="stat-thr" hidden><b id="hud-thr">0</b><span>Throttle %</span></div>
+    <div class="stat" id="stat-style"><b id="hud-style">0</b><span>Style</span></div>
+  </div>
+  <div id="combo" hidden aria-live="off">
+    <div class="cb-mult" id="cb-mult"></div>
+    <div class="cb-move" id="cb-move"></div>
+    <div class="cb-bar"><i id="cb-bar"></i></div>
+    <div class="cb-pts" id="cb-pts"></div>
   </div>
   <button id="btn-pause" aria-label="Pause">Pause</button>
   <canvas id="minimap" width="300" height="300" aria-hidden="true"></canvas>
@@ -327,6 +443,7 @@
 </div>
 
 <div id="attribution"></div>
+<div id="perf" hidden></div>
 
 <script type="importmap">
 { "imports": {

@@ -119,6 +119,7 @@ export class Details {
     this.avoidGrid = new Map();
     for (const a of opts.avoid || []) this.addAvoid(a[0], a[1], a[2]);
     this.trafficRoads = opts.trafficRoads || new Set();
+    this.boulevard = opts.boulevard || /embarcadero/i;
     this.counts = {};
     const t0 = performance.now();
     this.generate(W, map);
@@ -398,7 +399,8 @@ export class Details {
     }
 
     // --- along every street ---
-    const embarcadero = (rd) => rd.n && /embarcadero/i.test(rd.n);
+    const boulevard = this.boulevard;
+    const embarcadero = (rd) => rd.n && boulevard.test(rd.n);
     for (const rd of roads) {
       const hw = rd.w / 2;
       // Centre dashes and curbs.

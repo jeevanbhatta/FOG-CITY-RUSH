@@ -15,7 +15,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from districts import DISTRICTS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-ENDPOINT = "https://overpass-api.de/api/interpreter"
+# The main Overpass server and public mirrors, tried in turn.
+ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+]
 
 
 def query(BBOX, COAST_BBOX):
@@ -45,17 +51,21 @@ def fetch(did):
     OUT = ROOT / "data" / "raw" / f"{did}.osm.json"
     OUT.parent.mkdir(parents=True, exist_ok=True)
     body = urllib.parse.urlencode({"data": query(d["bbox"], d["coast"])}).encode()
-    req = urllib.request.Request(ENDPOINT, data=body, headers={"User-Agent": "fog-city-rush-map-builder/0.1"})
     raw = None
-    for attempt in range(4):
+    for attempt in range(2 * len(ENDPOINTS)):
+        endpoint = ENDPOINTS[attempt % len(ENDPOINTS)]
+        req = urllib.request.Request(endpoint, data=body, headers={"User-Agent": "fog-city-rush-map-builder/0.2"})
         try:
-            with urllib.request.urlopen(req, timeout=180) as resp:
+            print(f"{did}: asking {endpoint}", flush=True)
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 raw = resp.read()
+            if raw[:1] != b"{":
+                raise ValueError("not JSON (server busy?)")
             break
-        except Exception as e:  # Overpass rate-limits busy clients; back off and retry.
-            wait = 20 * (attempt + 1)
-            print(f"attempt {attempt + 1} failed ({e}); retrying in {wait}s")
-            time.sleep(wait)
+        except Exception as e:  # Busy servers rate-limit; move to the next mirror.
+            raw = None
+            print(f"attempt {attempt + 1} failed ({e}); trying the next server", flush=True)
+            time.sleep(10)
     if raw is None:
         sys.exit(f"Could not download {did} from Overpass.")
     OUT.write_bytes(raw)

@@ -14,6 +14,8 @@ export function defaultSettings(isTouch) {
     invertFlight: false,
     reduceMotion: reduce,
     minimap: true,
+    autoRes: true,
+    showFps: false,
     look: 'courier',
     skin: 2,
   };
