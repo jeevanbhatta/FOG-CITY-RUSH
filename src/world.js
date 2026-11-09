@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CollisionWorld, pointInSolid } from './physics.js';
+import { CollisionWorld, pointInSolid, closestOnSolid } from './physics.js';
 import * as TX from './textures.js';
 
 // ---------- small helpers ----------
@@ -297,11 +297,16 @@ export function buildWorld(map, scene) {
     // The hand-built clock tower replaces whatever OSM has at its spot.
     if (Math.hypot(cx - ferry.x, cz - ferry.z) < 14 && b.h > 28) return;
     // Clear buildings that would poke through the bridge approach.
+    // Sample along every wall, so buildings that straddle the corridor are caught too.
     let blocked = false;
-    for (const q of b.p) {
-      const [u, v] = corridor(q[0], q[1]);
-      if (u > -BRIDGE.rampLen - 4 && u < 40 && Math.abs(v) < BRIDGE.halfWidth + 3 && b.h > deckYAt(u) - 4) {
-        blocked = true; break;
+    for (let k = 0; k < b.p.length && !blocked; k++) {
+      const a = b.p[k], c = b.p[(k + 1) % b.p.length];
+      const steps = Math.max(1, Math.ceil(Math.hypot(c[0] - a[0], c[1] - a[1]) / 2));
+      for (let t = 0; t <= steps; t++) {
+        const [u, v] = corridor(a[0] + ((c[0] - a[0]) * t) / steps, a[1] + ((c[1] - a[1]) * t) / steps);
+        if (u > -BRIDGE.rampLen - 4 && u < 40 && Math.abs(v) < BRIDGE.halfWidth + 3 && b.h > deckYAt(u) - 4) {
+          blocked = true; break;
+        }
       }
     }
     if (blocked) return;
@@ -598,11 +603,23 @@ function buildFerryTower(world, stone, mats, tex, group, ladders, map) {
 
   // Ladders: the plaza side (facing Market St) all the way up, stage by stage.
   const sx = -ax, sz = -az; // outward normal of the plaza face
-  const ground = world.floorAt(sx * 10, sz * 10, 1, 0);
-  let base = ground.solid ? ground.y : 0;
   for (const [y0, y1, hwid] of stages.slice(0, 3)) {
-    ladders.push({ x: sx * (hwid + 0.05), z: sz * (hwid + 0.05), nx: sx, nz: sz, tx: -sz, tz: sx, y0: Math.max(base, y0), y1 });
-    base = y1;
+    // Start each ladder on whatever the runner can stand on in front of that face
+    // (the Ferry Building roof wraps around the tower base in the real data).
+    const foot = world.floorAt(sx * (hwid + 1.0), sz * (hwid + 1.0), y1 - 1, 0);
+    ladders.push({ x: sx * (hwid + 0.05), z: sz * (hwid + 0.05), nx: sx, nz: sz, tx: -sz, tz: sx, y0: Math.max(foot.y, y0), y1 });
+  }
+  // A ladder up the Ferry Building facade, straight ahead of the plaza.
+  for (let d = 60; d > 9; d -= 0.5) {
+    const px = sx * d, pz = sz * d;
+    const hit = world.pointBlocked(px, 1, pz);
+    if (!hit) continue;
+    if (hit.kind === 'building' && hit.y1 < 45) {
+      const c = closestOnSolid(hit, sx * (d + 0.5), sz * (d + 0.5), { x: 0, z: 0, d2: 0, edge: 0 });
+      const nx = hit.nxs[c.edge], nz = hit.nzs[c.edge];
+      ladders.push({ x: c.x + nx * 0.05, z: c.z + nz * 0.05, nx, nz, tx: -nz, tz: nx, y0: 0, y1: hit.y1 });
+    }
+    break;
   }
   return { x: 0, z: 0, top: 80, plaza: [sx * 40, sz * 40], face: [sx, sz], at };
 }
