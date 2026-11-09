@@ -191,3 +191,35 @@ export function puffTexture() {
   g.fillRect(0, 0, 128, 128);
   return finish(c, { repeat: false });
 }
+
+// Night-time window lights laid out on the same grid as the facade textures, but covering
+// 8 × 8 facade tiles so the pattern of lit windows doesn't visibly repeat.
+export function windowLightsTexture(kind) {
+  const tiles = 8, px = 128;
+  const [c, g] = canvas(tiles * px, tiles * px);
+  const r = rng(kind === 'glass' ? 21 : 17);
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, c.width, c.height);
+  const warm = ['#ffd9a0', '#ffe6b8', '#fff1d6', '#ffcf8a', '#e8f0ff'];
+  for (let ty = 0; ty < tiles; ty++) {
+    for (let tx = 0; tx < tiles; tx++) {
+      const ox = tx * px, oy = ty * px;
+      if (kind === 'glass') {
+        for (let y = 0; y < 2; y++) for (let x = 0; x < 4; x++) {
+          if (r() > 0.3) continue;
+          g.fillStyle = warm[Math.floor(r() * warm.length)];
+          g.fillRect(ox + x * 32 + 2, oy + y * 64 + 2, 28, 52);
+        }
+      } else {
+        for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
+          if (r() > 0.28) continue;
+          g.fillStyle = warm[Math.floor(r() * warm.length)];
+          g.fillRect(ox + x * 64 + 15, oy + y * 64 + 15, 34, 36);
+        }
+      }
+    }
+  }
+  const t = finish(c);
+  t.repeat.set(1 / tiles, 1 / tiles);
+  return t;
+}

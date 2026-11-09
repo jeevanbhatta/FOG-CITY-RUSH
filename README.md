@@ -30,6 +30,7 @@ python3 -m http.server 8000
 | Car: drive, steer, handbrake drift | W/S, A/D, Space | Stick, Drift |
 | Seaplane: climb/dive, bank, throttle | W/S, A/D, Shift/C (I inverts W/S) | Stick, Power + / − |
 | Restart run / pause | R / Esc | Pause button |
+| Toggle minimap / invert seaplane pitch | M / I | Settings |
 
 ## Courses
 
@@ -37,12 +38,27 @@ python3 -m http.server 8000
 - **Clock Tower Climb** (Medium): ladders and ledges up to the Ferry Building balcony.
 - **Bay Bridge Run** (Hard): up the approach ramp and the anchorage, along the main cable to the tower top, then a zipline home.
 - **Skyline Drop** (Medium, parachute): jump off the tallest tower downtown and glide through rings to the Ferry Building plaza.
+- **Fog City Express** (Hard, relay): run to the courier car, drive the waterfront, fly the seaplane over the skyline, then bail out and parachute onto the clock tower balcony.
 - **Waterfront Grand Prix** (Medium, car): out along The Embarcadero toward the bridge and back.
 - **Under the Bay Bridge** (Hard, seaplane): take off from the Ferry Building dock, fly under the deck, round the far anchorage, pass over the clock tower and splash down.
 
 Seaplane rules: take off above about 100 km/h by pulling up. Land on the water gently: level wings, a shallow descent and the nose not pointing down. Anything harder, and any building or bridge contact, is a crash and you respawn.
 
-Best times are kept in the browser's local storage.
+Best times, checkpoint splits and a ghost of your best run are kept in the browser's local storage.
+The ghost races you on your next attempt, and the results screen compares every checkpoint with your best.
+
+## Free roam
+
+25 lost parcels are hidden on rooftops, pier ends, the bridge towers and cable, and the top of the skyline.
+Nearby ones show on the minimap; your count is on the main menu.
+
+## Presentation
+
+- **Sound:** synthesised in the browser with Web Audio (footsteps, wind, zipline, car engine, propeller, canopy, splashes, chimes). There are no audio files.
+- **Sky:** a gradient sky dome and a slow day cycle (foggy day, golden hour, dusk with lit windows) with rolling fog. You can fix it to day or dusk in Settings.
+- **Effects:** particles (dust, sparks, drift smoke, spray, splashes, confetti), camera shake, speed lines and a brief slow-motion as you pass a ring. **Reduce motion** in Settings turns off the shake, speed lines, slow-motion and FOV kick.
+- **Life:** traffic on the real street network and gulls over the piers.
+- **Settings:** look sensitivity, volume, graphics quality (High, Medium or Low for phones, which uses blob shadows instead of real ones), time of day, inverted look and flight, reduce motion, and the minimap.
 
 ## Map data
 
@@ -67,6 +83,11 @@ Map data © OpenStreetMap contributors, available under the Open Database Licens
 - `src/physics.js`: collision world of vertical prisms (circle vs polygon, floor and ceiling queries)
 - `src/player.js`: movement and parkour moves, and the courier model
 - `src/vehicles.js`: arcade car and seaplane physics, models, parking and dock placement
+- `src/audio.js`, `src/particles.js`: synthesised sound and pooled particles
+- `src/sky.js`: sky dome and time-of-day cycle
+- `src/ghost.js`: best-run recording and ghost replay
+- `src/life.js`, `src/minimap.js`, `src/parcels.js`: traffic and gulls, the corner map, and collectibles
+- `src/settings.js`: saved settings and quality presets
 - `src/camera.js`: third-person camera that avoids walls
 - `src/courses.js`: course definitions, rings and timing
 - `src/hud.js`, `src/input.js`, `src/textures.js`: UI, input and procedural textures
