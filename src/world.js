@@ -391,7 +391,7 @@ export function buildWorld(map, scene) {
   const fogBanks = addFogBanks(group, tex.puff, bounds);
 
   return {
-    world, group, landmarks, bounds, tex, mats, water, fogBanks,
+    world, group, landmarks, bounds, tex, mats, water, fogBanks, map,
     roofAt: (x, z) => world.floorAt(x, z, 1e6, 0).y,
     update(dt, t) {
       tex.water.offset.x = (t * 0.004) % 1;

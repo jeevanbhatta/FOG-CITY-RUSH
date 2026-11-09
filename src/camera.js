@@ -47,6 +47,46 @@ export class CameraRig {
     if (this.camera.position.y < -1.2) this.camera.position.y = -1.2;
     this.camera.lookAt(t);
 
+    this.applyRoll(dt, player);
+    this.applyFov(dt, sp);
+  }
+
+  // Chase camera for vehicles: free look with the mouse, drifts back behind after a moment.
+  updateChase(dt, pos, heading, speed, look, opts) {
+    if (look[0] || look[1]) this.idle = 0; else this.idle = (this.idle || 0) + dt;
+    this.yaw -= look[0];
+    this.pitch = Math.max(-0.5, Math.min(1.2, this.pitch + look[1]));
+    if (this.idle > 0.9) {
+      let d = heading + Math.PI - this.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      const k = Math.min(1, dt * (speed > 3 ? 2.5 : 0.6));
+      this.yaw += d * k;
+      this.pitch += (opts.pitch - this.pitch) * k;
+    }
+    const t = this.target;
+    t.set(pos.x, pos.y + opts.height, pos.z);
+    const want = opts.dist + Math.min(opts.maxExtra, speed * opts.speedDist);
+    const cp = Math.cos(this.pitch), sp2 = Math.sin(this.pitch);
+    const ox = Math.sin(this.yaw) * cp, oy = sp2, oz = Math.cos(this.yaw) * cp;
+    let free = want;
+    for (let i = 1; i <= 14; i++) {
+      const d = (want * i) / 14;
+      if (this.world.pointBlocked(t.x + ox * d, t.y + oy * d + 0.2, t.z + oz * d)) {
+        free = Math.max(2, d - want / 14 - 0.3);
+        break;
+      }
+    }
+    if (free < this.curDist) this.curDist = free;
+    else this.curDist += (free - this.curDist) * Math.min(1, dt * 3);
+    const d = this.curDist;
+    this.camera.position.set(t.x + ox * d, t.y + oy * d + 0.4, t.z + oz * d);
+    if (this.camera.position.y < -1.0) this.camera.position.y = -1.0;
+    this.camera.lookAt(t);
+    if (opts.roll) this.camera.rotateZ(-opts.roll * 0.35);
+    this.applyFov(dt, speed * opts.fovScale);
+  }
+
+  applyRoll(dt, player) {
     let wantRoll = 0;
     if (player.wallRunning && player.wall) {
       const rightX = Math.cos(this.yaw), rightZ = -Math.sin(this.yaw);
@@ -54,7 +94,9 @@ export class CameraRig {
     }
     this.roll += (wantRoll - this.roll) * Math.min(1, dt * 6);
     this.camera.rotateZ(this.roll);
+  }
 
+  applyFov(dt, sp) {
     const fov = 70 + Math.min(16, Math.max(0, sp - 8) * 0.9);
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 4);

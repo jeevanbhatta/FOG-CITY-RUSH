@@ -167,7 +167,7 @@
   <div class="menu-inner">
     <div class="eyebrow"><b>Embarcadero</b><span>San Francisco</span><span>37.7955° N · 122.3937° W</span></div>
     <h1><span>Fog</span><span>City</span><span class="rush">Rush</span></h1>
-    <p class="lede">You're a courier on the waterfront. Run, wall-jump and mantle across real rooftops, climb the orange service ladders, and ride ziplines down from the Bay Bridge.</p>
+    <p class="lede">You're a courier on the waterfront. Run, wall-jump and mantle across real rooftops, ride ziplines down from the Bay Bridge, race a courier car along The Embarcadero, and fly the seaplane under the deck.</p>
     <ul id="course-list"></ul>
     <div class="row">
       <button class="btn primary" id="btn-free">Free roam</button>
@@ -180,10 +180,14 @@
       <div><kbd>Shift</kbd> Sprint · wall-run</div>
       <div><kbd>C</kbd> Slide · roll on landing</div>
       <div><kbd>E</kbd> Grab zipline</div>
+      <div><kbd>F</kbd> Drive · fly · get out</div>
+      <div><kbd>Space</kbd> Handbrake drift</div>
+      <div><kbd>Shift</kbd><kbd>C</kbd> Plane throttle</div>
+      <div><kbd>W</kbd><kbd>S</kbd> Climb · dive (<kbd>I</kbd> invert)</div>
       <div><kbd>R</kbd> Restart run</div>
       <div><kbd>Esc</kbd> Pause</div>
     </div>
-    <p class="touch-note">Drag the left side to run (push all the way to sprint), drag the right side to look. Buttons: jump, slide, grab.</p>
+    <p class="touch-note">Drag the left side to run (push all the way to sprint), drag the right side to look. Buttons: jump, slide, grab. Walk up to a car or the seaplane and tap Drive or Fly; in the plane, the buttons become throttle up and down.</p>
   </div>
 </section>
 
@@ -217,6 +221,7 @@
   <div class="hud-bl">
     <div class="stat"><b id="hud-speed">0</b><span>km/h</span></div>
     <div class="stat"><b id="hud-alt">0</b><span>Altitude m</span></div>
+    <div class="stat" id="stat-thr" hidden><b id="hud-thr">0</b><span>Throttle %</span></div>
   </div>
   <button id="btn-pause" aria-label="Pause">Pause</button>
   <div id="toast"></div>
@@ -228,10 +233,10 @@
 <div id="touch">
   <div data-stick><div data-knob></div></div>
   <div class="tbtns">
-    <button data-btn="grab">Grab</button>
-    <button data-btn="slide">Slide</button>
-    <span></span>
-    <button data-btn="jump">Jump</button>
+    <button data-btn="grab" id="tb-grab">Grab</button>
+    <button data-btn="slide" id="tb-slide">Slide</button>
+    <button data-btn="use" id="tb-use" hidden>Drive</button>
+    <button data-btn="jump" id="tb-jump">Jump</button>
   </div>
 </div>
 

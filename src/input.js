@@ -154,6 +154,10 @@ export class Input {
   get slideHit() { return this.hit('KeyC', 'ControlLeft', 'touch:slide'); }
   get slide() { return this.down('KeyC', 'ControlLeft', 'touch:slide'); }
   get grabHit() { return this.hit('KeyE', 'touch:grab'); }
+  get useHit() { return this.hit('KeyF', 'touch:use'); }
+  get handbrake() { return this.down('Space', 'touch:jump'); }
+  get throttleUp() { return this.down('ShiftLeft', 'ShiftRight', 'touch:jump'); }
+  get throttleDown() { return this.down('KeyC', 'ControlLeft', 'touch:slide'); }
 
   consumeLook() {
     const dx = this.lookDX, dy = this.lookDY;
