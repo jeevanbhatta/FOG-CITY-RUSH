@@ -6,6 +6,7 @@ import { Input } from './input.js';
 import { Hud, fmtTime } from './hud.js';
 import { defineCourses, resolveCourse, CourseRunner } from './courses.js';
 import { fallbackMap } from './fallback-map.js';
+import { Car, Seaplane, findParking, findWater } from './vehicles.js';
 
 const $ = (s) => document.querySelector(s);
 const canvas = $('#game');
@@ -86,7 +87,57 @@ const runner = new CourseRunner(scene);
   player.bounds = b;
 }
 
-const courses = defineCourses(W).map((c) => resolveCourse(c, W.world));
+// ---------- vehicles ----------
+const V = { cars: [], plane: null, carStart: null, dock: null };
+{
+  const f = W.landmarks.ferry;
+  const bi = W.landmarks.bridgeInfo;
+  // Nearest point on The Embarcadero to the plaza: the race start and the first parked car.
+  let best = null, bd = Infinity;
+  for (const r of map.roads) {
+    if (!r.n || !/embarcadero/i.test(r.n)) continue;
+    for (const q of r.p) {
+      const d = Math.hypot(q[0] - f.plaza[0], q[1] - f.plaza[1]);
+      if (d < bd) { bd = d; best = q; }
+    }
+  }
+  const shore = bi.at(0, 0);
+  const toBridge = Math.atan2(shore[0] - f.plaza[0], shore[1] - f.plaza[1]);
+  const spots = [];
+  if (best) spots.push([best[0], best[1], toBridge]);
+  spots.push([f.plaza[0] - f.face[1] * 30, f.plaza[1] + f.face[0] * 30, toBridge]);
+  const ramp = bi.at(-BRIDGE.rampLen - 25, 0);
+  spots.push([ramp[0], ramp[1], Math.atan2(W.landmarks.bridge.dx, W.landmarks.bridge.dz)]);
+  const colors = [0xe8552b, 0x2f6f8f, 0xf2c14e];
+  spots.forEach(([x, z, h], i) => {
+    const p = findParking(W.world, x, z, h);
+    if (!p) return;
+    const car = new Car(scene, p.x, p.y, p.z, h, colors[i % colors.length]);
+    V.cars.push(car);
+    if (!V.carStart) V.carStart = { pos: p.clone(), heading: h };
+  });
+  // Seaplane dock: open water off the bay side of the Ferry Building.
+  const bx = -f.face[0], bz = -f.face[1];
+  const wp = findWater(W.world, bx * 60, bz * 60, bx, bz);
+  if (wp) {
+    let sx = wp.x, sz = wp.z;
+    for (let d = 0; d < 400; d += 2) {
+      const qx = wp.x - bx * d, qz = wp.z - bz * d;
+      const fl = W.world.floorAt(qx, qz, 3, 0);
+      if (fl.solid && !W.world.pointBlocked(qx, fl.y + 1, qz)) { sx = qx; sz = qz; break; }
+    }
+    const heading = Math.atan2(bx, bz);
+    V.dock = { pos: wp.clone(), heading, shore: new THREE.Vector3(sx, 0, sz) };
+    V.plane = new Seaplane(scene, wp.x, wp.z, heading, V.dock);
+    const b = W.bounds;
+    V.plane.bounds = [b[0] - 700, b[1] - 700, b[2] + 1300, b[3] + 500];
+  }
+}
+const vehicles = () => (V.plane ? [...V.cars, V.plane] : V.cars);
+let driving = null;
+let invertFlight = !!store.get('invertFlight');
+
+const courses = defineCourses(W, V).map((c) => resolveCourse(c, W.world));
 
 // ---------- game state ----------
 let state = 'menu';
@@ -114,10 +165,79 @@ function lockPointer() {
   } catch (_) { /* fine: drag to look */ }
 }
 
+function enterVehicle(v) {
+  driving = v;
+  player.avatar.root.visible = false;
+  player.vel.set(0, 0, 0);
+  rig.yaw = v.heading + Math.PI;
+  rig.pitch = v.kind === 'plane' ? 0.25 : 0.2;
+  rig.curDist = 8;
+  setTouchMode(v.kind);
+  hud.toast(v.kind === 'plane' ? 'Shift for throttle, W to climb' : 'W to drive, Space to drift', 1800);
+}
+
+function exitVehicle() {
+  const v = driving;
+  if (!v) return;
+  if (v.kind === 'plane' && v.state === 'air') { hud.toast('Land first', 900); return; }
+  let p;
+  if (v.kind === 'plane') {
+    p = v.dock.shore.clone();
+  } else {
+    const rx = -Math.cos(v.heading), rz = Math.sin(v.heading);
+    p = new THREE.Vector3(v.pos.x - rx * 2.6, v.pos.y + 0.5, v.pos.z - rz * 2.6);
+    if (W.world.pointBlocked(p.x, p.y + 1, p.z)) p.set(v.pos.x, v.pos.y + 1.8, v.pos.z);
+  }
+  driving = null;
+  player.avatar.root.visible = true;
+  spawnAt(p, null);
+  rig.yaw = v.heading + Math.PI;
+  player.facing = v.heading;
+  if (v.kind === 'car') v.vel.set(0, 0, 0);
+  setTouchMode('foot');
+}
+
+function setTouchMode(mode) {
+  const L = { foot: ['Grab', 'Slide', 'Jump'], car: ['', '', 'Drift'], plane: ['', 'Power −', 'Power +'] }[mode];
+  $('#tb-grab').textContent = L[0]; $('#tb-grab').hidden = !L[0];
+  $('#tb-slide').textContent = L[1]; $('#tb-slide').hidden = !L[1];
+  $('#tb-jump').textContent = L[2];
+}
+
+function nearestVehicle() {
+  let best = null, bd = Infinity;
+  for (const v of vehicles()) {
+    if (v.kind === 'plane' && v.state === 'crashed') continue;
+    const reach = v.kind === 'plane' ? 30 : 4.5;
+    const d = Math.hypot(v.pos.x - player.pos.x, v.pos.z - player.pos.z);
+    if (d < reach && d < bd && Math.abs(v.pos.y - player.pos.y) < (v.kind === 'plane' ? 6 : 3)) { bd = d; best = v; }
+  }
+  return best;
+}
+
+function resetVehicleAt(v, p, next, airborne) {
+  const heading = next ? Math.atan2(next.x - p.x, next.z - p.z) : v.heading;
+  if (v.kind === 'plane') {
+    if (!airborne) v.resetToDock();
+    else v.place(p.clone(), heading, true, 34);
+  } else {
+    v.place(p.clone(), heading);
+  }
+  rig.yaw = heading + Math.PI;
+}
+
 function startCourse(c) {
+  if (driving) exitVehicle();
   active = c;
   runner.start(c);
   spawnAt(c.pts[0], c.pts[1]);
+  if (c.vehicle === 'car' && V.cars[0]) {
+    resetVehicleAt(V.cars[0], c.pts[0], c.pts[1], false);
+    enterVehicle(V.cars[0]);
+  } else if (c.vehicle === 'plane' && V.plane) {
+    V.plane.resetToDock();
+    enterVehicle(V.plane);
+  }
   hud.setCourse(c.name, store.get('best.' + c.id));
   state = 'countdown';
   countdown = 3.0;
@@ -128,6 +248,7 @@ function startCourse(c) {
 }
 
 function startFree() {
+  if (driving) exitVehicle();
   active = null;
   runner.clear();
   const p = W.landmarks.ferry.plaza;
@@ -137,11 +258,12 @@ function startFree() {
   showScreen(null);
   hud.show(true);
   input.enabled = true;
-  hud.toast('Free roam: climb anything orange', 2200);
+  hud.toast('Free roam: climb anything orange, press F at a car or the seaplane', 2600);
   lockPointer();
 }
 
 function toMenu() {
+  if (driving) exitVehicle();
   state = 'menu';
   runner.clear();
   hud.show(false);
@@ -231,7 +353,43 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') pause();
   if (e.code === 'KeyR' && (state === 'play' || state === 'countdown' || state === 'results') && active) startCourse(active);
   if (e.code === 'Enter' && state === 'results') startCourse(active);
+  if (e.code === 'KeyI') {
+    invertFlight = !invertFlight;
+    store.set('invertFlight', invertFlight);
+    if (state === 'play') hud.toast(invertFlight ? 'Flight: W dives' : 'Flight: W climbs', 1200);
+  }
 });
+
+// ---------- vehicles each frame ----------
+let stallToast = 0;
+function stepVehicle(dt, frozen) {
+  const v = driving;
+  const mv = frozen ? { x: 0, y: 0 } : input.move;
+  if (v.kind === 'car') {
+    v.update(dt, { throttle: mv.y, steer: mv.x, handbrake: !frozen && input.handbrake }, W.world);
+    if (v.impact > 12) hud.toast('Crunch', 500);
+    if (v.pos.y < -1.4) {
+      const back = active ? runner.respawn : v.home.pos;
+      resetVehicleAt(v, back, active ? runner.next : null, false);
+      hud.toast('The car went for a swim', 1400);
+    }
+  } else {
+    const pitchIn = (invertFlight ? -1 : 1) * mv.y;
+    const thr = frozen ? 0 : (input.throttleUp ? 1 : 0) - (input.throttleDown ? 1 : 0);
+    v.update(dt, { pitch: pitchIn, bank: mv.x, throttleDelta: thr }, W.world, elapsed);
+    for (const e of v.events) {
+      if (e.startsWith('crash:')) hud.toast(e.slice(6), 1600);
+      else if (e === 'Stall') { if (elapsed - stallToast > 2) { hud.toast('Stall! Nose down', 900); stallToast = elapsed; } }
+      else if (e === 'respawn') {
+        const idx = active ? runner.index - 1 : 0;
+        if (active && idx > 0) resetVehicleAt(v, runner.respawn.clone().setY(Math.max(30, runner.respawn.y)), runner.next, true);
+        else v.resetToDock();
+        rig.yaw = v.heading + Math.PI;
+      } else hud.toast(e, 900);
+    }
+  }
+  player.pos.copy(v.pos);
+}
 
 // ---------- main loop ----------
 let last = performance.now();
@@ -260,24 +418,59 @@ function frame(now) {
         runner.running = true;
         setTimeout(() => hud.countdown(null), 500);
       }
-      player.update(dt, { ...input, move: { x: 0, y: 0 }, jumpHit: false, slideHit: false, grabHit: false, jump: false, sprint: false, touchMove: input.touchMove }, rig.yaw);
+      if (driving) stepVehicle(dt, true);
+      else player.update(dt, { ...input, move: { x: 0, y: 0 }, jumpHit: false, slideHit: false, grabHit: false, jump: false, sprint: false, touchMove: input.touchMove }, rig.yaw);
     } else if (state === 'play') {
-      player.update(dt, input, rig.yaw);
-      const ev = runner.update(dt, player);
+      if (driving) {
+        stepVehicle(dt, false);
+        if (input.useHit) {
+          if (active && active.vehicle) hud.toast('Finish the run, or press R to restart', 1200);
+          else exitVehicle();
+        }
+      } else {
+        player.update(dt, input, rig.yaw);
+        for (const e of player.events) if (e !== 'Climb' && e !== 'Mantle') hud.toast(e, 700);
+        player.events.length = 0;
+        if (player.pos.y < -1.4) {
+          const back = active ? runner.respawn : player.safe;
+          const next = active ? runner.next : null;
+          spawnAt(back.clone(), next);
+          hud.toast('Splash! Back on dry land', 1400);
+        }
+        const near = !active || !active.vehicle ? nearestVehicle() : null;
+        if (near) {
+          const verb = near.kind === 'plane' ? 'fly' : 'drive';
+          player.prompt = `Press F to ${verb}`;
+          if (input.useHit) enterVehicle(near);
+        }
+        $('#tb-use').hidden = !near;
+        $('#tb-use').textContent = near ? (near.kind === 'plane' ? 'Fly' : 'Drive') : 'Drive';
+      }
+      const focus = driving ? driving.pos : player.pos;
+      const ev = runner.update(dt, focus);
       if (ev === 'checkpoint') hud.toast(`Checkpoint ${runner.index - 1} · ${fmtTime(runner.time)}`);
       if (ev === 'finish') finish();
-      for (const e of player.events) if (e !== 'Climb' && e !== 'Mantle') hud.toast(e, 700);
-      player.events.length = 0;
-      if (player.pos.y < -1.4) {
-        const back = active ? runner.respawn : player.safe;
-        const next = active ? runner.next : null;
-        spawnAt(back.clone(), next);
-        hud.toast('Splash! Back on dry land', 1400);
+    }
+    for (const v of vehicles()) if (v !== driving && v.kind === 'plane' && v.state === 'water') v.pos.y = -1.45 + Math.sin(elapsed * 1.7) * 0.05, v.sync(dt, elapsed);
+    if (state !== 'paused') {
+      if (driving) {
+        const plane = driving.kind === 'plane';
+        rig.updateChase(dt, driving.pos, driving.heading, driving.speed, look, plane
+          ? { height: 3.2, dist: 15, speedDist: 0.12, maxExtra: 8, pitch: 0.18, fovScale: 0.45, roll: driving.roll }
+          : { height: 1.9, dist: 7.5, speedDist: 0.08, maxExtra: 4, pitch: 0.16, fovScale: 0.6 });
+      } else {
+        rig.update(dt, player, look);
       }
     }
-    if (state !== 'paused') rig.update(dt, player, look);
-    sun.target.position.copy(player.pos);
-    hud.update({ player, runner, camera, next: runner.next });
+    const focus = driving ? driving.pos : player.pos;
+    sun.target.position.copy(focus);
+    hud.update({
+      runner, camera, next: runner.next, focus,
+      speed: driving ? driving.speed : (player.mode === 'zip' ? player.zip.speed : player.speed),
+      alt: focus.y,
+      throttle: driving && driving.kind === 'plane' ? driving.throttle : null,
+      prompt: driving ? null : player.prompt,
+    });
   }
   sun.position.copy(sun.target.position).add(SUN_OFF);
   input.endFrame();
@@ -290,4 +483,4 @@ showScreen('#menu');
 requestAnimationFrame(frame);
 
 // Handy for testing from the console.
-window.__fcr = { W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene };
+window.__fcr = { W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene, V, enterVehicle, exitVehicle };

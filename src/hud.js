@@ -62,22 +62,25 @@ export class Hud {
   }
 
   update(state) {
-    const { player, runner, camera, next } = state;
-    this.el.speed.textContent = Math.round((player.mode === 'zip' ? player.zip.speed : Math.hypot(player.speed, player.vel.y * 0.3)) * 3.6);
-    this.el.alt.textContent = Math.max(0, Math.round(player.pos.y));
+    const { runner, camera, next, focus } = state;
+    this.el.speed.textContent = Math.round(state.speed * 3.6);
+    this.el.alt.textContent = Math.max(0, Math.round(state.alt));
+    const thr = document.getElementById('stat-thr');
+    thr.hidden = state.throttle == null;
+    if (state.throttle != null) document.getElementById('hud-thr').textContent = Math.round(state.throttle * 100);
     if (runner.course) {
       this.el.time.textContent = fmtTime(runner.time);
       this.el.cp.textContent = `${Math.min(runner.index, runner.course.pts.length - 1)} / ${runner.course.pts.length - 1}`;
     }
-    this.el.prompt.textContent = player.prompt || '';
-    this.el.prompt.hidden = !player.prompt;
+    this.el.prompt.textContent = state.prompt || '';
+    this.el.prompt.hidden = !state.prompt;
 
     // Checkpoint pointer: on-screen marker or an edge arrow.
     const p = this.el.pointer;
     if (!next) { p.hidden = true; return; }
     const v = next.clone();
     v.y += 1.4;
-    const dist = player.pos.distanceTo(next);
+    const dist = focus.distanceTo(next);
     v.project(camera);
     const behind = v.z > 1;
     let x = v.x, y = v.y;

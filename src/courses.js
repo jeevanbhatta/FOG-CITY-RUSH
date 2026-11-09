@@ -5,7 +5,7 @@ import { BRIDGE } from './world.js';
 // Each checkpoint resolves to a point in the world; the run is timed from the
 // countdown to the last ring.
 
-export function defineCourses(W) {
+export function defineCourses(W, V) {
   const f = W.landmarks.ferry;
   const bi = W.landmarks.bridgeInfo;
   const plaza = f.plaza;
@@ -47,6 +47,52 @@ export function defineCourses(W) {
     top((t1x / Math.hypot(t1x, t1z)) * 3.6, 72.1, (t1z / Math.hypot(t1x, t1z)) * 3.6),
   ];
 
+  // Car: out along The Embarcadero toward the bridge and back on the other carriageway.
+  const race = [];
+  if (V && V.carStart) {
+    const nodes = [];
+    for (const r of W.map.roads) if (r.n && /embarcadero/i.test(r.n)) for (const q of r.p) nodes.push(q);
+    let cur = [V.carStart.pos.x, V.carStart.pos.z];
+    let dir = [ux, uz];
+    const out = [cur];
+    for (let k = 0; k < 6; k++) {
+      let best = null, bestScore = Infinity;
+      for (const q of nodes) {
+        const dx = q[0] - cur[0], dz = q[1] - cur[1];
+        const d = Math.hypot(dx, dz);
+        if (d < 120 || d > 240) continue;
+        const align = (dx * dir[0] + dz * dir[1]) / d;
+        if (align < 0.55) continue;
+        const score = Math.abs(d - 170) + (1 - align) * 200;
+        if (score < bestScore) { bestScore = score; best = q; }
+      }
+      if (!best) break;
+      const d = Math.hypot(best[0] - cur[0], best[1] - cur[1]);
+      dir = [(best[0] - cur[0]) / d, (best[1] - cur[1]) / d];
+      cur = best;
+      out.push(best);
+    }
+    const loop = out.concat(out.slice(0, -1).reverse().slice(1)).concat([out[0]]);
+    for (const q of loop) race.push(ground(q[0], q[1]));
+  }
+
+  // Seaplane: take off, thread under the bridge deck, round the far anchorage, over the clock tower, splash down.
+  const fly = [];
+  if (V && V.dock) {
+    const d = V.dock;
+    const hx = Math.sin(d.heading), hz = Math.cos(d.heading);
+    fly.push(top(d.pos.x, d.pos.y, d.pos.z));
+    fly.push(top(d.pos.x + hx * 420, 22, d.pos.z + hz * 420));
+    const [ux1, uz1] = bi.at((BRIDGE.towers[0] + BRIDGE.towers[1]) / 2, 0);
+    fly.push(top(ux1, 24, uz1));
+    const [ux2, uz2] = bi.at(BRIDGE.centreU - 60, 260);
+    fly.push(top(ux2, 90, uz2));
+    const [ux3, uz3] = bi.at(BRIDGE.towers[1], -40);
+    fly.push(top(ux3, 175, uz3));
+    fly.push(top(0, 125, 0));
+    fly.push(top(d.pos.x + hx * 160, 1.5, d.pos.z + hz * 160));
+  }
+
   return [
     {
       id: 'sprint', name: 'Embarcadero Sprint', difficulty: 'Easy',
@@ -63,7 +109,17 @@ export function defineCourses(W) {
       blurb: 'Up the approach, onto the cable, over the tower, and zipline home.',
       points: bridge, start: plaza,
     },
-  ];
+    {
+      id: 'race', name: 'Waterfront Grand Prix', difficulty: 'Medium', vehicle: 'car', ring: 2.6,
+      blurb: 'Courier car out along The Embarcadero toward the bridge and back.',
+      points: race, start: plaza,
+    },
+    {
+      id: 'flyer', name: 'Under the Bay Bridge', difficulty: 'Hard', vehicle: 'plane', ring: 4.2,
+      blurb: 'Seaplane run: under the deck, round the anchorage, over the clock tower, splash down.',
+      points: fly, start: plaza,
+    },
+  ].filter((c) => c.points.length > 1);
 }
 
 // Find a standable spot near (x,z) at street level.
@@ -90,7 +146,9 @@ export function resolveCourse(course, world) {
     const horiz = Math.hypot(b.x - a.x, b.z - a.z), dy = b.y - a.y;
     len += a.distanceTo(b);
     // Rough pace: 11 m/s running, ~12 m/s up ladders, ~28 m/s down long ziplines.
-    est += dy < -20 ? Math.hypot(horiz, dy) / 28 : horiz / 11 + Math.max(0, dy) / 12;
+    if (course.vehicle === 'car') est += horiz / 27;
+    else if (course.vehicle === 'plane') est += Math.hypot(horiz, dy) / 36;
+    else est += dy < -20 ? Math.hypot(horiz, dy) / 28 : horiz / 11 + Math.max(0, dy) / 12;
   }
   const gold = Math.ceil(est * 1.2 + 2);
   return {
@@ -129,7 +187,9 @@ export class CourseRunner {
       if (i === 0) return null;
       const g = new THREE.Group();
       const ring = new THREE.Mesh(this.ringGeo, this.matLater);
-      ring.position.y = 1.4;
+      const k = course.ring || 1;
+      ring.scale.setScalar(k);
+      ring.position.y = 1.4 * k;
       g.add(ring);
       const beacon = new THREE.Mesh(this.beaconGeo, this.beaconLater);
       g.add(beacon);
@@ -159,15 +219,16 @@ export class CourseRunner {
     return this.course && !this.finished ? this.course.pts[this.index] : null;
   }
 
-  update(dt, player) {
+  update(dt, focus) {
     if (!this.course) return null;
     const t = performance.now() / 1000;
     this.rings.forEach((g) => { if (g) g.userData.ring.rotation.z = Math.sin(t * 2) * 0.05; });
     if (!this.running || this.finished) return null;
     this.time += dt;
     const p = this.course.pts[this.index];
-    const dx = player.pos.x - p.x, dy = player.pos.y + 1 - (p.y + 1.4), dz = player.pos.z - p.z;
-    if (dx * dx + dz * dz < 3.4 * 3.4 && Math.abs(dy) < 3.2) {
+    const k = this.course.ring || 1;
+    const dx = focus.x - p.x, dy = focus.y + 1 - (p.y + 1.4 * k), dz = focus.z - p.z;
+    if (dx * dx + dz * dz < (3.4 * k) ** 2 && Math.abs(dy) < 3.2 * k) {
       this.splits.push(this.time);
       this.index++;
       if (this.index >= this.course.pts.length) {
