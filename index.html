@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fog City Rush</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<style>
+  /* Layout: full-bleed 3D city; menus are a fog panel docked left, HUD hugs the corners. */
+  :root {
+    --fog: #cdd5d8;          /* the fog itself, matches the 3D scene */
+    --mist: rgba(236, 241, 242, 0.86);
+    --bay: #1f3440;          /* deep bay slate for text */
+    --steel: #6f8591;        /* Bay Bridge steel, secondary text */
+    --signal: #ff6a2b;       /* international orange: ladders, rings, actions */
+    --signal-ink: #fff7f2;
+    --gold: #c9971f; --silver: #8d989e; --bronze: #a4673d;
+    --display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+    --body: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden; background: var(--fog); color: var(--bay);
+    font: 16px/1.4 var(--body); -webkit-font-smoothing: antialiased;
+    user-select: none; -webkit-user-select: none; touch-action: none;
+  }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  /* ---------- screens ---------- */
+  .screen { position: fixed; inset: 0; display: flex; z-index: 10; }
+  #menu {
+    background: linear-gradient(90deg, rgba(222, 229, 231, 0.94) 0%, rgba(222, 229, 231, 0.82) 38%, rgba(222, 229, 231, 0) 70%);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: max(20px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-bottom, 0px));
+    overflow-y: auto; touch-action: pan-y;
+  }
+  .menu-inner { width: min(560px, 100%); display: flex; flex-direction: column; gap: 22px; padding-left: clamp(0px, 3vw, 40px); }
+  .eyebrow { font: 600 0.82rem/1 var(--body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--steel); display: flex; gap: 10px; flex-wrap: wrap; }
+  .eyebrow b { color: var(--bay); font-weight: 600; }
+  h1 {
+    margin: 0; font: 900 clamp(4rem, 13vw, 8.6rem)/0.8 var(--display); letter-spacing: -0.01em;
+    text-transform: uppercase; color: var(--bay); text-wrap: balance;
+  }
+  h1 span { display: block; }
+  h1 .rush { color: var(--signal); }
+  .lede { margin: 0; max-width: 46ch; font-size: 1.06rem; color: #34495a; }
+
+  #course-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .course {
+    width: 100%; text-align: left; display: grid; gap: 4px; padding: 14px 16px 13px;
+    border: 0; border-left: 4px solid transparent; border-radius: 3px; background: rgba(255, 255, 255, 0.62);
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  }
+  .course:hover, .course:focus-visible { background: rgba(255, 255, 255, 0.92); border-left-color: var(--signal); transform: translateX(3px); }
+  .c-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .c-name { font: 800 1.7rem/1 var(--display); text-transform: uppercase; letter-spacing: 0.01em; }
+  .c-diff { font: 600 0.72rem/1 var(--body); letter-spacing: 0.14em; text-transform: uppercase; padding: 4px 7px 3px; border-radius: 2px; background: var(--bay); color: #eef2f3; }
+  .c-diff[data-d="easy"] { background: #4f7a63; }
+  .c-diff[data-d="hard"] { background: var(--signal); color: var(--signal-ink); }
+  .c-blurb { color: #3e5260; font-size: 0.96rem; }
+  .c-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.86rem; color: var(--steel); font-variant-numeric: tabular-nums; }
+  .c-best.gold { color: var(--gold); font-weight: 600; } .c-best.silver { color: var(--silver); font-weight: 600; } .c-best.bronze { color: var(--bronze); font-weight: 600; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn {
+    border: 0; border-radius: 3px; padding: 12px 20px 11px; font: 800 1.15rem/1 var(--display);
+    letter-spacing: 0.06em; text-transform: uppercase; background: var(--bay); color: #eef2f3;
+  }
+  .btn.primary { background: var(--signal); color: var(--signal-ink); }
+  .btn.ghost { background: rgba(255, 255, 255, 0.6); color: var(--bay); }
+  .btn:hover { filter: brightness(1.08); }
+
+  .controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 18px; font-size: 0.9rem; color: #3e5260; }
+  .controls div { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  kbd {
+    font: 600 0.78rem/1 var(--body); min-width: 1.9em; padding: 4px 6px 3px; text-align: center;
+    border-radius: 3px; background: #fff; color: var(--bay); box-shadow: inset 0 -2px 0 #b7c2c7;
+  }
+  .touch-note { display: none; font-size: 0.92rem; color: #3e5260; }
+  body.touch .controls { display: none; } body.touch .touch-note { display: block; }
+  .fine { font-size: 0.78rem; color: var(--steel); }
+
+  /* Centered dialogs: pause + results */
+  .dialog-wrap { align-items: center; justify-content: center; background: rgba(205, 213, 216, 0.55); backdrop-filter: blur(3px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .dialog { width: min(420px, 100%); background: var(--mist); border-radius: 4px; padding: 24px 24px 22px; display: grid; gap: 14px; box-shadow: 0 18px 50px rgba(31, 52, 64, 0.25); }
+  .dialog h2 { margin: 0; font: 900 2.6rem/0.9 var(--display); text-transform: uppercase; }
+  .big-time { font: 900 4.4rem/0.9 var(--display); font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+  #res-medal { font: 800 1.3rem/1 var(--display); text-transform: uppercase; letter-spacing: 0.05em; }
+  #res-medal[data-medal="gold"] { color: var(--gold); } #res-medal[data-medal="silver"] { color: var(--silver); }
+  #res-medal[data-medal="bronze"] { color: var(--bronze); } #res-medal[data-medal="none"] { color: var(--steel); }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 7; }
+  .hud-tl { background: rgba(236, 241, 242, 0.72); border-radius: 4px; padding: 7px 12px 6px; position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 2px; }
+  #hud-course { font: 800 1.15rem/1 var(--display); text-transform: uppercase; letter-spacing: 0.06em; color: var(--bay); }
+  #hud-cp { font: 600 0.9rem/1 var(--body); color: var(--steel); font-variant-numeric: tabular-nums; }
+  .hud-tc { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); text-align: center; background: rgba(236, 241, 242, 0.72); border-radius: 4px; padding: 6px 16px 7px; }
+  .hud-tc:has(#hud-time[hidden]) { display: none; }
+  #hud-time { font: 900 clamp(2.4rem, 7vw, 3.6rem)/1 var(--display); font-variant-numeric: tabular-nums; color: var(--bay); text-shadow: 0 1px 0 rgba(255,255,255,0.6); }
+  #hud-best { font: 600 0.85rem/1 var(--body); color: var(--steel); font-variant-numeric: tabular-nums; }
+  .hud-bl { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 18px; background: rgba(236, 241, 242, 0.72); border-radius: 4px; padding: 8px 14px 7px; }
+  .stat { display: grid; }
+  .stat b { font: 900 2rem/1 var(--display); font-variant-numeric: tabular-nums; color: var(--bay); }
+  .stat span { font: 600 0.68rem/1 var(--body); letter-spacing: 0.16em; text-transform: uppercase; color: var(--steel); }
+  #btn-pause { pointer-events: auto; position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    border: 0; background: rgba(255,255,255,0.6); border-radius: 3px; padding: 8px 12px 7px; font: 800 0.95rem/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; }
+  #toast {
+    position: absolute; left: 50%; top: 30%; transform: translate(-50%, 8px); opacity: 0;
+    font: 800 1.6rem/1 var(--display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--signal);
+    text-shadow: 0 2px 10px rgba(255,255,255,0.7); white-space: nowrap; transition: opacity 0.25s, transform 0.25s;
+  }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
+  #prompt { position: absolute; left: 50%; bottom: calc(26% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    background: rgba(31, 52, 64, 0.82); color: #eef2f3; padding: 7px 12px 6px; border-radius: 3px; font-size: 0.95rem; white-space: nowrap; }
+  #countdown { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); font: 900 9rem/1 var(--display); color: var(--signal); text-shadow: 0 4px 30px rgba(255,255,255,0.6); }
+  #countdown.pop { animation: pop 0.5s ease-out; }
+  @keyframes pop { from { transform: translate(-50%, -50%) scale(1.5); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+  #pointer { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+  #pointer .dot { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--signal); background: rgba(255,255,255,0.4); }
+  #pointer .arrow { display: none; position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; transform: rotate(var(--ang)); }
+  #pointer .arrow::before { content: ""; position: absolute; left: 8px; top: 4px; border-left: 16px solid var(--signal); border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+  #pointer.edge .dot { display: none; } #pointer.edge .arrow { display: block; }
+  #pointer-dist { position: absolute; left: 0; top: 16px; transform: translateX(-50%); font: 800 1rem/1 var(--display); color: var(--bay); white-space: nowrap; text-shadow: 0 1px 4px rgba(255,255,255,0.8); }
+  #attribution { position: fixed; right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(6px + env(safe-area-inset-bottom, 0px)); z-index: 20; font-size: 0.72rem; color: var(--steel); pointer-events: none; }
+
+  /* ---------- touch controls ---------- */
+  #touch { position: fixed; inset: 0; z-index: 6; display: none; }
+  body.touch.in-game #touch { display: block; }
+  [data-stick] { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 2px solid rgba(31,52,64,0.25); background: rgba(255,255,255,0.18); opacity: 0; }
+  [data-stick].on { opacity: 1; }
+  [data-knob] { position: absolute; left: 36px; top: 36px; width: 48px; height: 48px; border-radius: 50%; background: rgba(31,52,64,0.45); }
+  .tbtns { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: repeat(2, 74px); gap: 12px; }
+  .tbtns button { width: 74px; height: 74px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.55); font: 800 0.95rem/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bay); }
+  .tbtns button[data-btn="jump"] { background: rgba(255,106,43,0.85); color: var(--signal-ink); }
+  .tbtns button.down { transform: scale(0.94); filter: brightness(0.92); }
+
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 30; background: var(--fog);
+    font: 800 1.6rem/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--steel); }
+
+  @media (max-width: 640px) {
+    #menu { background: linear-gradient(180deg, rgba(222,229,231,0.92), rgba(222,229,231,0.88)); }
+    .hud-bl { gap: 12px; } .stat b { font-size: 1.6rem; }
+    .tbtns { grid-template-columns: repeat(2, 64px); } .tbtns button { width: 64px; height: 64px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .course, #toast { transition: none; } #countdown.pop { animation: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="game" tabindex="0" aria-label="Fog City Rush game view"></canvas>
+<div id="loading">Rolling in the fog…</div>
+
+<section id="menu" class="screen" hidden>
+  <div class="menu-inner">
+    <div class="eyebrow"><b>Embarcadero</b><span>San Francisco</span><span>37.7955° N · 122.3937° W</span></div>
+    <h1><span>Fog</span><span>City</span><span class="rush">Rush</span></h1>
+    <p class="lede">You're a courier on the waterfront. Run, wall-jump and mantle across real rooftops, climb the orange service ladders, and ride ziplines down from the Bay Bridge.</p>
+    <ul id="course-list"></ul>
+    <div class="row">
+      <button class="btn primary" id="btn-free">Free roam</button>
+      <span class="fine">Best times are saved on this device.</span>
+    </div>
+    <div class="controls" aria-label="Controls">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Run</div>
+      <div><kbd>Mouse</kbd> Look</div>
+      <div><kbd>Space</kbd> Jump · wall-jump</div>
+      <div><kbd>Shift</kbd> Sprint · wall-run</div>
+      <div><kbd>C</kbd> Slide · roll on landing</div>
+      <div><kbd>E</kbd> Grab zipline</div>
+      <div><kbd>R</kbd> Restart run</div>
+      <div><kbd>Esc</kbd> Pause</div>
+    </div>
+    <p class="touch-note">Drag the left side to run (push all the way to sprint), drag the right side to look. Buttons: jump, slide, grab.</p>
+  </div>
+</section>
+
+<section id="pause" class="screen dialog-wrap" hidden>
+  <div class="dialog">
+    <h2>Paused</h2>
+    <div class="row">
+      <button class="btn primary" id="btn-resume">Resume</button>
+      <button class="btn" id="btn-restart">Restart</button>
+      <button class="btn ghost" id="btn-menu">Menu</button>
+    </div>
+  </div>
+</section>
+
+<section id="results" class="screen dialog-wrap" hidden>
+  <div class="dialog">
+    <div class="eyebrow"><b id="res-course"></b><span>Finished</span></div>
+    <div class="big-time" id="res-time"></div>
+    <div id="res-medal"></div>
+    <div class="fine" id="res-best"></div>
+    <div class="row">
+      <button class="btn primary" id="btn-retry">Run again</button>
+      <button class="btn ghost" id="btn-results-menu">Menu</button>
+    </div>
+  </div>
+</section>
+
+<div id="hud" hidden>
+  <div class="hud-tl"><div id="hud-course"></div><div id="hud-cp"></div></div>
+  <div class="hud-tc"><div id="hud-time">0:00.00</div><div id="hud-best"></div></div>
+  <div class="hud-bl">
+    <div class="stat"><b id="hud-speed">0</b><span>km/h</span></div>
+    <div class="stat"><b id="hud-alt">0</b><span>Altitude m</span></div>
+  </div>
+  <button id="btn-pause" aria-label="Pause">Pause</button>
+  <div id="toast"></div>
+  <div id="prompt" hidden></div>
+  <div id="countdown" hidden></div>
+  <div id="pointer" hidden><div class="dot"></div><div class="arrow"></div><div id="pointer-dist"></div></div>
+</div>
+
+<div id="touch">
+  <div data-stick><div data-knob></div></div>
+  <div class="tbtns">
+    <button data-btn="grab">Grab</button>
+    <button data-btn="slide">Slide</button>
+    <span></span>
+    <button data-btn="jump">Jump</button>
+  </div>
+</div>
+
+<div id="attribution"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
