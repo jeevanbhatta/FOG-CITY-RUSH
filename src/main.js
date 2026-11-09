@@ -67,7 +67,7 @@ async function loadMap() {
 
 const map = await loadMap();
 $('#attribution').textContent = map.meta.generated
-  ? 'Generated stand-in layout. Real map data loads once data/embarcadero.json is built.'
+  ? 'Generated stand-in layout'
   : '© OpenStreetMap contributors';
 
 const W = buildWorld(map, scene);

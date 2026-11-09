@@ -145,8 +145,12 @@
   #loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 30; background: var(--fog);
     font: 800 1.6rem/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--steel); }
 
+  body.in-game #attribution { bottom: auto; top: calc(56px + env(safe-area-inset-top, 0px)); }
   @media (max-width: 640px) {
     #menu { background: linear-gradient(180deg, rgba(222,229,231,0.92), rgba(222,229,231,0.88)); }
+    .hud-tl { top: calc(84px + env(safe-area-inset-top, 0px)); }
+    #hud-course { font-size: 0.95rem; }
+    body.in-game #attribution { top: calc(60px + env(safe-area-inset-top, 0px)); }
     .hud-bl { gap: 12px; } .stat b { font-size: 1.6rem; }
     .tbtns { grid-template-columns: repeat(2, 64px); } .tbtns button { width: 64px; height: 64px; }
   }

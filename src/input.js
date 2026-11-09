@@ -45,6 +45,11 @@ export class Input {
     window.addEventListener('mouseup', () => { this.dragging = false; });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    // Show touch controls as soon as the device is touch-first or any touch happens.
+    const markTouch = () => { this.isTouch = true; document.body.classList.add('touch'); };
+    if (matchMedia('(pointer: coarse)').matches) markTouch();
+    window.addEventListener('touchstart', markTouch, { capture: true, passive: true });
+
     this.setupTouch(touchRoot);
   }
 
