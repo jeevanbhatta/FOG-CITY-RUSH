@@ -176,9 +176,16 @@ function enterVehicle(v) {
   hud.toast(v.kind === 'plane' ? 'Shift for throttle, W to climb' : 'W to drive, Space to drift', 1800);
 }
 
-function exitVehicle() {
+function exitVehicle(silent = false) {
   const v = driving;
   if (!v) return;
+  if (silent) {
+    // Leaving a run or the menu: just put the courier back on foot.
+    driving = null;
+    player.avatar.root.visible = true;
+    setTouchMode('foot');
+    return;
+  }
   if (v.kind === 'plane' && v.state === 'air') {
     // Bail out: drop below the plane with its momentum; the plane flies itself back to the dock.
     const p = v.pos.clone();
@@ -216,6 +223,7 @@ function setTouchMode(mode) {
   $('#tb-grab').textContent = L[0]; $('#tb-grab').hidden = !L[0];
   $('#tb-slide').textContent = L[1]; $('#tb-slide').hidden = !L[1];
   $('#tb-jump').textContent = L[2];
+  if (mode !== 'foot') { $('#tb-use').hidden = false; $('#tb-use').textContent = 'Exit'; }
 }
 
 function nearestVehicle() {
@@ -241,7 +249,7 @@ function resetVehicleAt(v, p, next, airborne) {
 }
 
 function startCourse(c) {
-  if (driving) exitVehicle();
+  if (driving) exitVehicle(true);
   active = c;
   runner.start(c);
   spawnAt(c.pts[0], c.pts[1]);
@@ -262,7 +270,7 @@ function startCourse(c) {
 }
 
 function startFree() {
-  if (driving) exitVehicle();
+  if (driving) exitVehicle(true);
   active = null;
   runner.clear();
   const p = W.landmarks.ferry.plaza;
@@ -277,7 +285,7 @@ function startFree() {
 }
 
 function toMenu() {
-  if (driving) exitVehicle();
+  if (driving) exitVehicle(true);
   state = 'menu';
   runner.clear();
   hud.show(false);

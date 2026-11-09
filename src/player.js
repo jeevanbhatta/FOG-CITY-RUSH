@@ -64,6 +64,8 @@ export class Player {
     this.onGround = false;
     this.slideTime = this.stumble = this.rollTime = 0;
     this.wallRunTime = 0;
+    this.coyote = this.jumpBuffer = this.wallTimer = 0;
+    this.chute = null;
     this.safe.copy(p);
   }
 
@@ -543,45 +545,115 @@ export class Player {
 class Avatar {
   constructor() {
     const root = new THREE.Group();
-    const jacket = new THREE.MeshStandardMaterial({ color: 0xe8552b, roughness: 0.7 });
-    const pants = new THREE.MeshStandardMaterial({ color: 0x2c3440, roughness: 0.85 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0xc58c66, roughness: 0.8 });
-    const bag = new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.6 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x1b1f24, roughness: 0.6 });
+    const M = (color, roughness = 0.75, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
+    const jacket = M(0xe8552b, 0.7);
+    const jacketDark = M(0xc4441f, 0.75);
+    const pants = M(0x2c3440, 0.85);
+    const skin = M(0xc58c66, 0.8);
+    const bag = M(0xf2efe6, 0.6);
+    const bagFlap = M(0xe0dacb, 0.65);
+    const dark = M(0x1b1f24, 0.6);
+    const capMat = M(0x23303b, 0.6);
+    const reflect = M(0xdfe6ea, 0.3, { metalness: 0.4, emissive: 0x30363a });
+    const shoe = M(0xf4f4f0, 0.6);
+    const sole = M(0xff6a2b, 0.6);
+    const hair = M(0x2a1d16, 0.9);
+    const eyeMat = M(0x151515, 0.3);
 
+    const mesh = (geo, mat, x, y, z, parent) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      parent.add(m);
+      return m;
+    };
+    const box = (w, h, d, mat, x, y, z, parent) => mesh(new THREE.BoxGeometry(w, h, d), mat, x, y, z, parent);
+    const capsule = (r, len, mat, y, parent) => mesh(new THREE.CapsuleGeometry(r, len, 4, 8), mat, 0, y, 0, parent);
+
+    // Body pivots at the hips.
     const body = new THREE.Group();
     body.position.y = 0.95;
     root.add(body);
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.6, 0.28), jacket);
-    torso.position.y = 0.3;
-    body.add(torso);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.28, 0.26), skin);
-    head.position.y = 0.78;
-    body.add(head);
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.1, 0.3), dark);
-    cap.position.set(0, 0.95, 0.02);
-    body.add(cap);
-    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.14), dark);
-    brim.position.set(0, 0.91, 0.2);
-    body.add(brim);
-    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.42, 0.22), bag);
-    pack.position.set(0, 0.34, -0.25);
-    body.add(pack);
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.41, 0.06, 0.225), jacket);
-    stripe.position.set(0, 0.42, -0.25);
-    body.add(stripe);
+    box(0.36, 0.2, 0.24, pants, 0, 0.02, 0, body);
+    box(0.37, 0.05, 0.25, dark, 0, 0.12, 0, body); // belt
+    // Jacket: zip, collar, reflective band and a chest patch.
+    box(0.44, 0.5, 0.26, jacket, 0, 0.37, 0, body);
+    box(0.445, 0.05, 0.265, reflect, 0, 0.3, 0, body);
+    box(0.02, 0.44, 0.01, dark, 0, 0.38, 0.135, body);
+    box(0.3, 0.08, 0.24, jacketDark, 0, 0.64, 0, body);
+    box(0.08, 0.08, 0.01, reflect, -0.12, 0.5, 0.135, body);
+    // Backpack straps over the shoulders and down the chest.
+    for (const x of [-0.13, 0.13]) {
+      box(0.05, 0.42, 0.02, dark, x, 0.4, 0.137, body);
+      box(0.05, 0.03, 0.3, dark, x, 0.635, -0.02, body);
+    }
 
-    const limb = (w, l, mat) => {
-      const g = new THREE.Group();
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, l, w), mat);
-      m.position.y = -l / 2;
-      g.add(m);
-      return g;
+    // Head: face, hair, cap.
+    mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 8), skin, 0, 0.7, 0, body);
+    const head = new THREE.Group();
+    head.position.y = 0.86;
+    body.add(head);
+    mesh(new THREE.SphereGeometry(0.15, 16, 12), skin, 0, 0, 0, head).scale.set(1, 1.12, 1.02);
+    mesh(new THREE.SphereGeometry(0.155, 16, 12), hair, 0, 0.01, -0.035, head).scale.set(1, 1.1, 1);
+    this.eyes = [];
+    for (const x of [-0.055, 0.055]) {
+      const e = mesh(new THREE.SphereGeometry(0.019, 8, 6), eyeMat, x, 0.02, 0.143, head);
+      this.eyes.push(e);
+      box(0.055, 0.012, 0.012, hair, x, 0.065, 0.146, head); // brows
+    }
+    box(0.03, 0.05, 0.03, skin, 0, -0.02, 0.158, head); // nose
+    box(0.06, 0.012, 0.01, M(0x7a3f33, 0.7), 0, -0.075, 0.146, head); // mouth
+    const crown = mesh(new THREE.SphereGeometry(0.162, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), capMat, 0, 0.05, 0, head);
+    crown.scale.set(1.02, 0.85, 1.05);
+    const brim = box(0.21, 0.02, 0.14, capMat, 0, 0.065, 0.18, head);
+    brim.rotation.x = 0.12;
+    box(0.07, 0.05, 0.012, sole, 0, 0.12, 0.148, head); // cap logo
+    mesh(new THREE.SphereGeometry(0.022, 8, 6), sole, 0, 0.19, 0, head);
+    this.head = head;
+
+    // Arms: shoulder pivot, elbow joint, cuff and glove.
+    const arm = (side) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(side * 0.29, 0.56, 0);
+      body.add(pivot);
+      box(0.15, 0.12, 0.18, jacket, 0, -0.02, 0, pivot);
+      capsule(0.065, 0.2, jacket, -0.16, pivot);
+      const elbow = new THREE.Group();
+      elbow.position.y = -0.3;
+      pivot.add(elbow);
+      capsule(0.058, 0.17, jacket, -0.12, elbow);
+      box(0.13, 0.05, 0.13, reflect, 0, -0.21, 0, elbow);
+      box(0.09, 0.11, 0.1, dark, 0, -0.29, 0.01, elbow);
+      return { pivot, elbow };
     };
-    this.armL = limb(0.13, 0.58, jacket); this.armL.position.set(-0.31, 0.56, 0); body.add(this.armL);
-    this.armR = limb(0.13, 0.58, jacket); this.armR.position.set(0.31, 0.56, 0); body.add(this.armR);
-    this.legL = limb(0.17, 0.92, pants); this.legL.position.set(-0.12, 0.0, 0); body.add(this.legL);
-    this.legR = limb(0.17, 0.92, pants); this.legR.position.set(0.12, 0.0, 0); body.add(this.legR);
+    // Legs: hip pivot, knee joint, sneakers with orange soles.
+    const leg = (side) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(side * 0.11, 0, 0);
+      body.add(pivot);
+      capsule(0.085, 0.27, pants, -0.22, pivot);
+      const knee = new THREE.Group();
+      knee.position.y = -0.44;
+      pivot.add(knee);
+      capsule(0.075, 0.25, pants, -0.2, knee);
+      box(0.15, 0.05, 0.15, dark, 0, -0.37, 0, knee); // cuff
+      box(0.13, 0.09, 0.27, shoe, 0, -0.43, 0.05, knee);
+      box(0.135, 0.03, 0.28, sole, 0, -0.485, 0.05, knee);
+      return { pivot, knee };
+    };
+    const aL = arm(-1), aR = arm(1), lL = leg(-1), lR = leg(1);
+    this.armL = aL.pivot; this.elbowL = aL.elbow;
+    this.armR = aR.pivot; this.elbowR = aR.elbow;
+    this.legL = lL.pivot; this.kneeL = lL.knee;
+    this.legR = lR.pivot; this.kneeR = lR.knee;
+
+    // Courier backpack: body, flap, stripe, reflective patch.
+    const pack = new THREE.Group();
+    pack.position.set(0, 0.38, -0.25);
+    body.add(pack);
+    box(0.4, 0.46, 0.22, bag, 0, 0, 0, pack);
+    box(0.42, 0.14, 0.24, bagFlap, 0, 0.19, 0.0, pack);
+    box(0.41, 0.06, 0.225, jacket, 0, 0.04, 0, pack);
+    box(0.16, 0.08, 0.01, reflect, 0, -0.13, -0.112, pack);
 
     // Parachute canopy: an arched ram-air wing in orange and white cells, with lines to the shoulders.
     const chute = new THREE.Group();
@@ -618,6 +690,7 @@ class Avatar {
     root.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
     this.root = root;
     this.body = body;
+    this.blink = 2;
     this.phase = 0;
     this.yaw = 0;
     this.lean = 0;
@@ -640,6 +713,7 @@ class Avatar {
       o.rotation.z += (z - o.rotation.z) * k;
     };
     let bodyTilt = 0, bodyY = 0.95, roll = 0;
+    let knee = [0.05, 0.05], elbow = [-0.15, -0.15];
     this.chute.visible = p.mode === 'chute';
     if (p.mode === 'chute') {
       const c = p.chute;
@@ -647,28 +721,34 @@ class Avatar {
       this.chute.rotation.z += (c.bank * 0.3 - this.chute.rotation.z) * k;
       set(this.armL, -2.7, 0.35 - c.bank * 0.3); set(this.armR, -2.7, -0.35 - c.bank * 0.3);
       set(this.legL, -0.25); set(this.legR, -0.1);
+      knee = [0.35, 0.2]; elbow = [-0.35, -0.35];
       roll = c.bank * 0.25;
     } else if (p.mode === 'climb') {
       this.phase += dt * 9 * Math.abs(p.climbDir || 0);
       const s = Math.sin(this.phase);
       set(this.armL, -2.6 + s * 0.4); set(this.armR, -2.6 - s * 0.4);
       set(this.legL, -0.5 - s * 0.4); set(this.legR, -0.5 + s * 0.4);
+      knee = [0.9 + s * 0.5, 0.9 - s * 0.5]; elbow = [-0.5, -0.5];
     } else if (p.mode === 'zip') {
       set(this.armL, -2.9, 0.15); set(this.armR, -2.9, -0.15);
       set(this.legL, -0.3); set(this.legR, -0.1);
+      knee = [0.45, 0.25]; elbow = [-0.05, -0.05];
       bodyTilt = 0.1;
     } else if (p.mode === 'mantle') {
       set(this.armL, -1.8); set(this.armR, -1.8);
       set(this.legL, -1.2); set(this.legR, -0.2);
+      knee = [1.4, 0.4]; elbow = [-0.7, -0.7];
       bodyTilt = 0.4;
     } else if (p.slideTime > 0 && p.onGround) {
       set(this.armL, -0.6, 0.6); set(this.armR, -0.3, -0.6);
       set(this.legL, -1.45); set(this.legR, -0.9);
+      knee = [0.1, 1.3]; elbow = [-0.3, -0.5];
       bodyTilt = -0.55; bodyY = 0.55;
     } else if (!p.onGround) {
       const up = p.vel.y > 0;
       set(this.armL, up ? -2.2 : -1.2, 0.3); set(this.armR, up ? -2.2 : -1.2, -0.3);
       set(this.legL, up ? -1.1 : -0.4); set(this.legR, up ? 0.2 : -0.9);
+      knee = up ? [1.3, 0.5] : [0.5, 1.0]; elbow = [-0.8, -0.8];
       bodyTilt = 0.15;
       if (p.wallRunning && p.wall) {
         const side = Math.sin(p.facing) * p.wall.nz - Math.cos(p.facing) * p.wall.nx;
@@ -679,6 +759,10 @@ class Avatar {
       const s = Math.sin(this.phase), amp = Math.min(1.1, 0.35 + sp * 0.07);
       set(this.armL, s * amp); set(this.armR, -s * amp);
       set(this.legL, -s * amp); set(this.legR, s * amp);
+      // Knees fold as each leg swings back; elbows bend more at a sprint.
+      knee = [0.15 + Math.max(0, s) * amp * 1.6, 0.15 + Math.max(0, -s) * amp * 1.6];
+      const eb = -0.35 - Math.min(1, sp / 12) * 1.0;
+      elbow = [eb, eb];
       bodyTilt = Math.min(0.32, sp * 0.022);
       bodyY = 0.95 + Math.abs(Math.cos(this.phase)) * 0.06;
     } else {
@@ -693,5 +777,15 @@ class Avatar {
     }
     this.body.rotation.z += (roll - this.body.rotation.z) * k;
     this.body.position.y += (bodyY - this.body.position.y) * k;
+    this.kneeL.rotation.x += (knee[0] - this.kneeL.rotation.x) * k;
+    this.kneeR.rotation.x += (knee[1] - this.kneeR.rotation.x) * k;
+    this.elbowL.rotation.x += (elbow[0] - this.elbowL.rotation.x) * k;
+    this.elbowR.rotation.x += (elbow[1] - this.elbowR.rotation.x) * k;
+    // Keep the head level with the horizon while the body leans, and blink now and then.
+    this.head.rotation.x = -this.body.rotation.x * 0.6;
+    this.blink -= dt;
+    const closed = this.blink < 0.12;
+    for (const e of this.eyes) e.scale.y = closed ? 0.15 : 1;
+    if (this.blink < 0) this.blink = 2.5 + Math.random() * 3;
   }
 }
