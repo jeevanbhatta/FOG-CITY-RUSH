@@ -127,6 +127,40 @@ def ring_out(poly):
     return [[round(x, 1), round(z, 1)] for x, z in ring]
 
 
+POINT_KINDS = ["tree", "lamp", "signal", "crossing", "bus", "bench", "bike", "bin", "water", "post", "hydrant", "bollard"]
+
+
+def point_kind(tags):
+    """Street furniture category for an OSM node, or None."""
+    if tags.get("natural") == "tree":
+        return "tree"
+    hw = tags.get("highway")
+    if hw == "street_lamp":
+        return "lamp"
+    if hw == "traffic_signals":
+        return "signal"
+    if hw == "crossing":
+        return "crossing"
+    if hw == "bus_stop":
+        return "bus"
+    am = tags.get("amenity")
+    if am == "bench":
+        return "bench"
+    if am == "bicycle_parking":
+        return "bike"
+    if am == "waste_basket":
+        return "bin"
+    if am == "drinking_water":
+        return "water"
+    if am == "post_box":
+        return "post"
+    if tags.get("emergency") == "fire_hydrant":
+        return "hydrant"
+    if tags.get("barrier") == "bollard":
+        return "bollard"
+    return None
+
+
 def find_bridge(pts, land):
     """Fit the Bay Bridge axis and find where it leaves the shore."""
     if len(pts) < 2:
@@ -166,8 +200,17 @@ def main():
 
     outlines, parts, roads, piers, parks, coast = [], [], [], [], [], []
     bridge_pts = []
+    points = {k: [] for k in POINT_KINDS}
+    rails = []
     for el in elements:
         tags = el.get("tags", {})
+        if el["type"] == "node":
+            kind = point_kind(tags)
+            if kind:
+                x, z = project(el["lat"], el["lon"])
+                if BOUNDS.contains(Point(x, z)):
+                    points[kind].append([round(x, 1), round(z, 1)])
+            continue
         geoms = []
         if el["type"] == "way" and "geometry" in el:
             geoms = [el["geometry"]]
@@ -194,6 +237,13 @@ def main():
                     poly = line.buffer(float(parse_len(tags.get("width")) or 5) / 2, cap_style=2)
                 if poly is not None and not poly.is_empty:
                     piers.append(poly)
+            elif tags.get("railway") in ("tram", "light_rail"):
+                if tags.get("tunnel") in ("yes",) or (tags.get("layer") or "0").lstrip("-") not in ("0", ""):
+                    continue
+                line = LineString([project(g["lat"], g["lon"]) for g in geom]).intersection(BOUNDS)
+                for ln in ([line] if line.geom_type == "LineString" else getattr(line, "geoms", [])):
+                    if ln.geom_type == "LineString" and ln.length > 5:
+                        rails.append([[round(x, 1), round(z, 1)] for x, z in ln.simplify(0.4).coords])
             elif tags.get("leisure") == "park" and closed:
                 poly = poly_from_geom(geom)
                 if poly:
@@ -297,8 +347,11 @@ def main():
         "parks": poly_list(parks),
         "roads": out_roads,
         "buildings": out_buildings,
+        "points": points,
+        "rails": rails,
     }
     OUT.write_text(json.dumps(out, separators=(",", ":"), ensure_ascii=False))
+    print("points:", {k: len(v) for k, v in points.items()}, "rails:", len(rails))
     print(f"wrote {OUT.relative_to(ROOT)}: {len(out_buildings)} buildings, {len(out_roads)} roads, "
           f"{len(out['piers'])} piers, {len(out['land'])} land polys, {OUT.stat().st_size // 1024} KB")
 

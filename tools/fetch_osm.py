@@ -28,6 +28,12 @@ QUERY = f"""
   way["man_made"="pier"]({BBOX});
   way["natural"="coastline"]({COAST_BBOX});
   way["leisure"="park"]({BBOX});
+  node["natural"="tree"]({BBOX});
+  node["highway"~"^(street_lamp|traffic_signals|crossing|bus_stop)$"]({BBOX});
+  node["amenity"~"^(bench|bicycle_parking|waste_basket|drinking_water|post_box)$"]({BBOX});
+  node["emergency"="fire_hydrant"]({BBOX});
+  node["barrier"="bollard"]({BBOX});
+  way["railway"~"^(tram|light_rail)$"]({BBOX});
 );
 out body geom;
 """
