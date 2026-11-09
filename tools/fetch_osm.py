@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Download the raw Embarcadero OpenStreetMap extract from the Overpass API.
+"""Download raw OpenStreetMap extracts for each district from the Overpass API.
 
-Writes data/raw/embarcadero.osm.json. Run tools/build_map.py afterwards.
+Usage: python3 tools/fetch_osm.py [district ...]   (default: every district)
+Writes data/raw/<district>.osm.json. Run tools/build_map.py afterwards.
 Respects HTTPS_PROXY from the environment. Map data © OpenStreetMap contributors.
 """
 import sys
@@ -10,22 +11,22 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from districts import DISTRICTS  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "data" / "raw" / "embarcadero.osm.json"
 ENDPOINT = "https://overpass-api.de/api/interpreter"
 
-# south, west, north, east
-BBOX = "37.7825,-122.4075,37.8040,-122.3780"
-COAST_BBOX = "37.7700,-122.4200,37.8150,-122.3650"
 
-QUERY = f"""
+def query(BBOX, COAST_BBOX):
+    return f"""
 [out:json][timeout:120];
 (
   way["building"]({BBOX});
   relation["building"]({BBOX});
   way["building:part"]({BBOX});
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|pedestrian|footway|motorway_link|trunk_link|primary_link)$"]({BBOX});
-  way["man_made"="pier"]({BBOX});
+  way["man_made"~"^(pier|breakwater|groyne)$"]({BBOX});
   way["natural"="coastline"]({COAST_BBOX});
   way["leisure"="park"]({BBOX});
   node["natural"="tree"]({BBOX});
@@ -39,9 +40,11 @@ out body geom;
 """
 
 
-def main():
+def fetch(did):
+    d = DISTRICTS[did]
+    OUT = ROOT / "data" / "raw" / f"{did}.osm.json"
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    body = urllib.parse.urlencode({"data": QUERY}).encode()
+    body = urllib.parse.urlencode({"data": query(d["bbox"], d["coast"])}).encode()
     req = urllib.request.Request(ENDPOINT, data=body, headers={"User-Agent": "fog-city-rush-map-builder/0.1"})
     raw = None
     for attempt in range(4):
@@ -54,9 +57,15 @@ def main():
             print(f"attempt {attempt + 1} failed ({e}); retrying in {wait}s")
             time.sleep(wait)
     if raw is None:
-        sys.exit("Could not download map data from Overpass.")
+        sys.exit(f"Could not download {did} from Overpass.")
     OUT.write_bytes(raw)
     print(f"wrote {OUT.relative_to(ROOT)} ({len(raw) // 1024} KB)")
+
+
+def main():
+    for did in sys.argv[1:] or list(DISTRICTS):
+        fetch(did)
+        time.sleep(5)  # be gentle with the public Overpass server
 
 
 if __name__ == "__main__":

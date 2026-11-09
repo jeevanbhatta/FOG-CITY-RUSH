@@ -2,11 +2,12 @@
 """Bake raw OpenStreetMap data (Overpass JSON) into the compact map file the game loads.
 
 Usage:
-    python3 tools/fetch_osm.py            # downloads data/raw/embarcadero.osm.json
-    python3 tools/build_map.py            # writes data/embarcadero.json
+    python3 tools/fetch_osm.py [district ...]   # downloads data/raw/<district>.osm.json
+    python3 tools/build_map.py [district ...]   # writes data/<district>.json
 
-Coordinates in the output are metres in a local frame centred on the Ferry
-Building clock tower: +x is east, +z is south (three.js convention, -z = north).
+Districts are listed in tools/districts.py. Coordinates in the output are metres in a
+local frame centred on the district's hub landmark (the Ferry Building clock tower,
+the Palace of Fine Arts rotunda): +x is east, +z is south (three.js convention).
 Map data © OpenStreetMap contributors, available under the ODbL.
 """
 import json
@@ -18,25 +19,34 @@ from pathlib import Path
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import linemerge, split, unary_union
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from districts import DISTRICTS  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
-RAW = ROOT / "data" / "raw" / "embarcadero.osm.json"
-OUT = ROOT / "data" / "embarcadero.json"
-
-# Ferry Building clock tower.
-LAT0, LON0 = 37.79553, -122.39370
 M_PER_DEG_LAT = 110_950.0
-M_PER_DEG_LON = 111_320.0 * math.cos(math.radians(LAT0))
 
-# Playable square (metres) around the origin.
-HALF = 900.0
-BOUNDS = box(-HALF - 250, -HALF, HALF + 250, HALF + 400)
+# Set per district by configure().
+LAT0 = LON0 = M_PER_DEG_LON = None
+BOUNDS = None
+LAND_PROBES_LATLON = []
+BRIDGE_MATCH = {"names": [], "refs": []}
 
-# Points we know are on land, used to pick the land side of the coastline.
-LAND_PROBES_LATLON = [
-    (37.7936, -122.3965),  # Market & Front
-    (37.7975, -122.4010),  # Jackson Square
-    (37.7890, -122.3960),  # 2nd & Mission
-]
+
+def configure(d):
+    global LAT0, LON0, M_PER_DEG_LON, BOUNDS, LAND_PROBES_LATLON, BRIDGE_MATCH
+    LAT0, LON0 = d["origin"]
+    M_PER_DEG_LON = 111_320.0 * math.cos(math.radians(LAT0))
+    BOUNDS = box(*d["clip"])
+    LAND_PROBES_LATLON = d["probes"]
+    BRIDGE_MATCH = d["bridge"]
+
+
+def is_bridge_way(tags):
+    if tags.get("bridge") not in ("yes", "viaduct") or tags.get("highway") not in ("motorway", "trunk", "primary"):
+        return False
+    name = (tags.get("name") or "").lower()
+    ref = tags.get("ref") or ""
+    return any(n in name for n in BRIDGE_MATCH["names"]) or any(r in ref for r in BRIDGE_MATCH["refs"])
 
 ROAD_WIDTH = {
     "motorway": 14, "trunk": 13, "primary": 13, "secondary": 11, "tertiary": 10,
@@ -173,7 +183,12 @@ def find_bridge(pts, land):
     sxz = sum((p[0] - cx) * (p[1] - cz) for p in pts)
     ang = 0.5 * math.atan2(2 * sxz, sxx - szz)
     dx, dz = math.cos(ang), math.sin(ang)
-    if dx < 0:
+    # Point the axis from the end that sits on land out toward the water.
+    proj = [((p[0] - cx) * dx + (p[1] - cz) * dz) for p in pts]
+    lo, hi = min(proj), max(proj)
+    lo_land = land.contains(Point(cx + dx * lo, cz + dz * lo))
+    hi_land = land.contains(Point(cx + dx * hi, cz + dz * hi))
+    if (hi_land and not lo_land) or (lo_land == hi_land and dx < 0):
         dx, dz = -dx, -dz
     # Walk along the axis from the inland end and stop at the first step into water.
     proj = [((p[0] - cx) * dx + (p[1] - cz) * dz) for p in pts]
@@ -192,9 +207,13 @@ def find_bridge(pts, land):
     return {"shore": [round(shore[0], 1), round(shore[1], 1)], "dir": [round(dx, 4), round(dz, 4)]}
 
 
-def main():
+def build(did):
+    d = DISTRICTS[did]
+    configure(d)
+    RAW = ROOT / "data" / "raw" / f"{did}.osm.json"
+    OUT = ROOT / "data" / f"{did}.json"
     if not RAW.exists():
-        sys.exit(f"Missing {RAW}. Run tools/fetch_osm.py first.")
+        sys.exit(f"Missing {RAW}. Run tools/fetch_osm.py {did} first.")
     data = json.loads(RAW.read_text())
     elements = data["elements"]
 
@@ -229,7 +248,7 @@ def main():
                     outlines.append((poly, tags, el["id"]))
             elif tags.get("natural") == "coastline":
                 coast.append(LineString([project(g["lat"], g["lon"]) for g in geom]))
-            elif tags.get("man_made") == "pier":
+            elif tags.get("man_made") in ("pier", "breakwater", "groyne"):
                 if closed:
                     poly = poly_from_geom(geom)
                 else:
@@ -249,8 +268,7 @@ def main():
                 if poly:
                     parks.append(poly)
             elif "highway" in tags:
-                if tags.get("bridge") in ("yes", "viaduct") and tags.get("highway") == "motorway" and (
-                        "bay bridge" in (tags.get("name") or "").lower() or "I 80" in (tags.get("ref") or "")):
+                if is_bridge_way(tags):
                     bridge_pts += [project(g["lat"], g["lon"]) for g in geom]
                 if tags.get("bridge") in ("yes", "viaduct") or tags.get("tunnel") in ("yes", "building_passage"):
                     continue
@@ -336,7 +354,8 @@ def main():
     out = {
         "meta": {
             "bridge": bridge,
-            "name": "Embarcadero",
+            "id": did,
+            "name": d["name"],
             "origin": {"lat": LAT0, "lon": LON0},
             "bounds": [round(c, 1) for c in BOUNDS.bounds],
             "attribution": "Map data © OpenStreetMap contributors (ODbL)",
@@ -354,6 +373,11 @@ def main():
     print("points:", {k: len(v) for k, v in points.items()}, "rails:", len(rails))
     print(f"wrote {OUT.relative_to(ROOT)}: {len(out_buildings)} buildings, {len(out_roads)} roads, "
           f"{len(out['piers'])} piers, {len(out['land'])} land polys, {OUT.stat().st_size // 1024} KB")
+
+
+def main():
+    for did in sys.argv[1:] or list(DISTRICTS):
+        build(did)
 
 
 if __name__ == "__main__":
