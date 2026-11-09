@@ -1,10 +1,17 @@
 # Fog City Rush
 
-A browser game set on San Francisco's Embarcadero. Run, wall-jump, wall-run, slide and
-mantle across rooftops, climb the orange service ladders, walk the Bay Bridge's main
-cable, and ride ziplines back down to the Ferry Building clock tower. Play as a courier,
-skater, tourist, techie or freerunner.
-You can also drive courier cars along The Embarcadero and fly a seaplane under the Bay Bridge.
+A browser game set on San Francisco's waterfront, built from real OpenStreetMap data. Run,
+wall-jump, wall-run, slide and mantle across rooftops, climb the orange service ladders,
+walk the bridge cables and ride ziplines back down. Drive cars along the boulevards, fly a
+seaplane under the bridge and parachute down to the shore. Play as a courier, skater,
+tourist, techie or freerunner.
+
+**Play it:** https://jeevanbhatta.github.io/FOG-CITY-RUSH/ (works on phones; "Add to Home Screen" installs it).
+
+Two districts, each downloaded only when you play it:
+
+- **Embarcadero:** the Ferry Building clock tower, the Bay Bridge and the downtown towers.
+- **Marina & Crissy Field:** the Palace of Fine Arts rotunda, Crissy Field and the Golden Gate Bridge.
 
 Built with [three.js](https://threejs.org) (loaded from jsDelivr) and plain ES modules, with no build step.
 
@@ -32,8 +39,31 @@ python3 -m http.server 8000
 | Seaplane: climb/dive, bank, throttle | W/S, A/D, Shift/C (I inverts W/S) | Stick, Power + / − |
 | Restart run / pause | R / Esc | Pause button |
 | Toggle minimap / invert seaplane pitch | M / I | Settings |
+| FPS readout | F3 | Settings |
+
+Gamepads work too: left stick runs (push all the way to sprint, or hold a trigger), right stick
+looks, A jumps, B slides, X grabs, Y drives or flies, the triggers set the seaplane throttle, and
+Start pauses. The d-pad and A move around the menus.
+
+## Style and momentum
+
+Chain moves without stalling (wall runs, wall jumps, slides, long jumps, rolls, vaults, ziplines,
+zipline jumps, parachutes) to build a combo multiplier. The chain is banked about two seconds after
+you stop flowing, and lost on a hard landing or a dip in the bay. Repeating the same move scores
+half. A long chain also builds flow, which raises your top sprint speed by up to 18%. Speed carries
+through wall jumps, landings (longer after a roll) and vaults over ledges.
+
+## Race a friend's ghost
+
+After a run, **Challenge a friend** makes a link holding your best run (compressed into the
+link itself, no server). Whoever opens it races your ghost in orange, and the results say who won.
 
 ## Courses
+
+Every district has the same seven course types: a street sprint, a landmark climb, a bridge run,
+a parachute drop, a relay mission, a car race and a seaplane run. In the Marina they are Crissy Field
+Dash, Rotunda Climb, Golden Gate Run, Tower Leap, Presidio Express, Marina Green Grand Prix and
+Under the Golden Gate. The Embarcadero set:
 
 - **Embarcadero Sprint** (Easy): a street-level run along the waterfront.
 - **Clock Tower Climb** (Medium): ladders and ledges up to the Ferry Building balcony.
@@ -50,7 +80,7 @@ The ghost races you on your next attempt, and the results screen compares every 
 
 ## Free roam
 
-25 Fog City postcards are hidden on rooftops, pier ends, the bridge towers and cable, and the top of the skyline.
+25 Fog City postcards per district are hidden on rooftops, pier ends, the bridge towers and cable, and the top of the skyline.
 Nearby ones show on the minimap; your count is on the main menu.
 
 ## Street detail
@@ -67,27 +97,39 @@ posts, signals, bus shelters, parked cars, rooftop units and water towers have c
 - **Sky:** a gradient sky dome and a slow day cycle (foggy day, golden hour, dusk with lit windows) with rolling fog. You can fix it to day or dusk in Settings.
 - **Effects:** particles (dust, sparks, drift smoke, spray, splashes, confetti), camera shake, speed lines and a brief slow-motion as you pass a ring. **Reduce motion** in Settings turns off the shake, speed lines, slow-motion and FOV kick.
 - **Life:** traffic on the real street network and gulls over the piers.
-- **Settings:** look sensitivity, volume, graphics quality (High, Medium or Low for phones, which uses blob shadows instead of real ones), time of day, inverted look and flight, reduce motion, and the minimap.
+- **Settings:** look sensitivity, volume, graphics quality (High, Medium or Low for phones, which uses blob shadows instead of real ones), time of day, inverted look and flight, reduce motion, the minimap, automatic resolution and an FPS readout.
+- **Performance:** automatic resolution lowers the render scale when frames run slow and raises it again when there's headroom.
 
 ## Map data
 
-`data/embarcadero.json` is baked from OpenStreetMap:
+`data/<district>.json` files are baked from OpenStreetMap. Districts (extract box, origin,
+land probes, which bridge to find) are listed in `tools/districts.py`.
 
 ```sh
 pip install -r tools/requirements.txt
-python3 tools/fetch_osm.py   # downloads data/raw/embarcadero.osm.json from Overpass
-python3 tools/build_map.py   # writes data/embarcadero.json
+python3 tools/fetch_osm.py [district ...]   # downloads data/raw/<district>.osm.json from Overpass
+python3 tools/build_map.py [district ...]   # writes data/<district>.json
 ```
 
-If that file is missing, the game falls back to a generated stand-in layout (`src/fallback-map.js`).
-The Ferry Building clock tower and the Bay Bridge west span are hand-built in `src/world.js`,
-because the OpenStreetMap geometry for them isn't detailed enough for gameplay.
+The **Build map data** GitHub Actions workflow runs both steps and commits the results whenever the
+tools change. If a map file is missing, the game falls back to a generated stand-in layout
+(`src/fallback-map.js`). The hub landmarks (the Ferry Building clock tower, the Palace of Fine Arts
+rotunda) and the suspension bridges are hand-built in `src/world.js`, because the OpenStreetMap
+geometry for them isn't detailed enough for gameplay.
+
+## Hosting
+
+The **Publish site** workflow deploys the game to GitHub Pages on every push to `main`
+(one-time setup: Settings → Pages → Source: GitHub Actions). On that site the game registers a web
+app manifest and a service worker, so it can be installed and played offline after the first visit.
 
 Map data © OpenStreetMap contributors, available under the Open Database License.
 
 ## Code map
 
-- `src/main.js`: renderer, game states, menus, main loop
+- `src/main.js`: renderer, game states, menus (with the fly-through), main loop, performance readout
+- `src/districts.js`: per-district settings (map file, landmarks, bridge, course names)
+- `src/combo.js`, `src/share.js`: style combos, and packing ghost runs into race links
 - `src/world.js`: builds city meshes and collision from map data, plus the bridge, the tower, ladders and ziplines
 - `src/physics.js`: collision world of vertical prisms (circle vs polygon, floor and ceiling queries)
 - `src/player.js`: movement and parkour moves, and the courier model
