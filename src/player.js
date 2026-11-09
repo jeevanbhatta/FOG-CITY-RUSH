@@ -107,6 +107,7 @@ export class Player {
     if (this.mode === 'mantle') return this.stepMantle(h);
     if (this.mode === 'climb') return this.stepClimb(h, ctx);
     if (this.mode === 'zip') return this.stepZip(h, ctx);
+    if (this.mode === 'chute') return this.stepChute(h, ctx);
 
     const { wx, wz, wishLen, sprint } = ctx;
     const v = this.vel;
@@ -183,8 +184,13 @@ export class Player {
         this.wallRunning = false;
         this.jumpBuffer = 0;
         this.emit('Wall jump');
+      } else if (!this.onGround && v.y < 3 && this.heightAboveGround() > 6) {
+        this.jumpBuffer = 0;
+        this.openChute();
+        return;
       }
     }
+    if (!this.onGround && v.y < -9 && this.heightAboveGround() > 10) this.prompt = 'Jump again to open your parachute';
 
     // --- Integrate horizontal and resolve walls ---
     this.pos.x += v.x * h;
@@ -285,6 +291,65 @@ export class Player {
       this.emit('Splash');
       this.inWater = true;
     }
+  }
+
+  heightAboveGround() {
+    const f = this.world.floorAt(this.pos.x, this.pos.z, this.pos.y + 0.1, 0);
+    return this.pos.y - (f.solid ? f.y : -1.6);
+  }
+
+  openChute() {
+    this.mode = 'chute';
+    if (this.speed > 0.6) this.facing = Math.atan2(this.vel.x, this.vel.z);
+    this.chute = { open: 0, speed: Math.min(14, this.speed), bank: 0 };
+    this.emit('Parachute');
+  }
+
+  // Ram-air canopy: steer like the seaplane (bank to turn), trade sink rate for forward speed.
+  stepChute(h, ctx) {
+    const c = this.chute, v = this.vel, inp = ctx.input.move;
+    c.open = Math.min(1, c.open + h / 0.45);
+    c.bank += (inp.x - c.bank) * Math.min(1, h * 3);
+    this.facing -= c.bank * 1.15 * h;
+    const fwdT = 12 + (inp.y > 0 ? inp.y * 5 : inp.y * 7);    // W dives faster, S flares
+    const sinkT = 5 + (inp.y > 0 ? inp.y * 4.5 : inp.y * 2.5);
+    c.speed += (fwdT - c.speed) * Math.min(1, h * 1.5);
+    const fx = Math.sin(this.facing), fz = Math.cos(this.facing);
+    const k = Math.min(1, h * 2.5 * c.open);
+    v.x += (fx * c.speed - v.x) * k;
+    v.z += (fz * c.speed - v.z) * k;
+    v.y += (-sinkT - v.y) * Math.min(1, h * (1 + 3.5 * c.open)); // opening shock
+    if (this.jumpBuffer > 0) {
+      this.jumpBuffer = 0;
+      this.mode = 'normal';
+      this.chute = null;
+      this.emit('Cut away');
+      return;
+    }
+    this.pos.x += v.x * h;
+    this.pos.z += v.z * h;
+    const before = Math.hypot(v.x, v.z);
+    const contact = this.resolveWalls();
+    if (contact && before - Math.hypot(v.x, v.z) > 5) {
+      this.mode = 'normal';
+      this.chute = null;
+      this.emit('Chute collapsed');
+      return;
+    }
+    const prevY = this.pos.y;
+    this.pos.y += v.y * h;
+    const floor = this.world.floorAt(this.pos.x, this.pos.z, prevY + 0.3, T.radius * 0.55);
+    if (floor.solid && this.pos.y <= floor.y) {
+      this.pos.y = floor.y;
+      if (v.y < -7) this.stumble = 0.35;
+      v.y = 0;
+      v.x *= 0.45; v.z *= 0.45;
+      this.mode = 'normal';
+      this.chute = null;
+      this.onGround = true;
+      this.emit('Landed');
+    }
+    if (this.pos.y < -1.4) this.inWater = true;
   }
 
   land(fallSpeed) {
@@ -518,6 +583,38 @@ class Avatar {
     this.legL = limb(0.17, 0.92, pants); this.legL.position.set(-0.12, 0.0, 0); body.add(this.legL);
     this.legR = limb(0.17, 0.92, pants); this.legR.position.set(0.12, 0.0, 0); body.add(this.legR);
 
+    // Parachute canopy: an arched ram-air wing in orange and white cells, with lines to the shoulders.
+    const chute = new THREE.Group();
+    const cellMats = [
+      new THREE.MeshStandardMaterial({ color: 0xff6a2b, roughness: 0.7, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.7, side: THREE.DoubleSide }),
+    ];
+    const cells = 7, arc = 1.7, R = 4.5;
+    for (let i = 0; i < cells; i++) {
+      const g = new THREE.CylinderGeometry(R, R, 2.8, 3, 1, true, -arc / 2 + (i * arc) / cells, arc / cells);
+      g.rotateX(-Math.PI / 2);
+      g.translate(0, 2.2, 0);
+      chute.add(new THREE.Mesh(g, cellMats[i % 2]));
+    }
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0x2a3138 });
+    const line = (a, b) => {
+      const d = new THREE.Vector3().subVectors(b, a);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, d.length(), 3), lineMat);
+      m.position.copy(a).addScaledVector(d, 0.5);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+      chute.add(m);
+    };
+    for (const sx of [-1, 1]) {
+      for (const tz of [-1.2, 1.2]) {
+        const tip = new THREE.Vector3(sx * R * Math.sin(arc / 2), 2.2 + R * Math.cos(arc / 2), tz);
+        line(new THREE.Vector3(sx * 0.3, 1.55, 0), tip);
+      }
+      line(new THREE.Vector3(sx * 0.3, 1.55, 0), new THREE.Vector3(sx * 1.6, 2.2 + R * Math.cos(0.36), 0));
+    }
+    chute.visible = false;
+    root.add(chute);
+    this.chute = chute;
+
     root.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
     this.root = root;
     this.body = body;
@@ -543,7 +640,15 @@ class Avatar {
       o.rotation.z += (z - o.rotation.z) * k;
     };
     let bodyTilt = 0, bodyY = 0.95, roll = 0;
-    if (p.mode === 'climb') {
+    this.chute.visible = p.mode === 'chute';
+    if (p.mode === 'chute') {
+      const c = p.chute;
+      this.chute.scale.set(0.3 + 0.7 * c.open, 0.2 + 0.8 * c.open, 0.3 + 0.7 * c.open);
+      this.chute.rotation.z += (c.bank * 0.3 - this.chute.rotation.z) * k;
+      set(this.armL, -2.7, 0.35 - c.bank * 0.3); set(this.armR, -2.7, -0.35 - c.bank * 0.3);
+      set(this.legL, -0.25); set(this.legR, -0.1);
+      roll = c.bank * 0.25;
+    } else if (p.mode === 'climb') {
       this.phase += dt * 9 * Math.abs(p.climbDir || 0);
       const s = Math.sin(this.phase);
       set(this.armL, -2.6 + s * 0.4); set(this.armR, -2.6 - s * 0.4);

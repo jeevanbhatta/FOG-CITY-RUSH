@@ -24,7 +24,9 @@ python3 -m http.server 8000
 | Jump, wall-jump | Space | Jump |
 | Slide (press just before landing to roll) | C | Slide |
 | Grab a zipline from a standstill | E | Grab |
-| Get in / out of a car or the seaplane | F | Drive / Fly button |
+| Open parachute (while falling) / cut away | Space | Jump |
+| Parachute: steer, dive, flare | A/D, W, S | Stick |
+| Get in / out of a car or the seaplane (bail out in flight) | F | Drive / Fly button |
 | Car: drive, steer, handbrake drift | W/S, A/D, Space | Stick, Drift |
 | Seaplane: climb/dive, bank, throttle | W/S, A/D, Shift/C (I inverts W/S) | Stick, Power + / − |
 | Restart run / pause | R / Esc | Pause button |
@@ -34,6 +36,7 @@ python3 -m http.server 8000
 - **Embarcadero Sprint** (Easy): a street-level run along the waterfront.
 - **Clock Tower Climb** (Medium): ladders and ledges up to the Ferry Building balcony.
 - **Bay Bridge Run** (Hard): up the approach ramp and the anchorage, along the main cable to the tower top, then a zipline home.
+- **Skyline Drop** (Medium, parachute): jump off the tallest tower downtown and glide through rings to the Ferry Building plaza.
 - **Waterfront Grand Prix** (Medium, car): out along The Embarcadero toward the bridge and back.
 - **Under the Bay Bridge** (Hard, seaplane): take off from the Ferry Building dock, fly under the deck, round the far anchorage, pass over the clock tower and splash down.
 

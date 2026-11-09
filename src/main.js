@@ -179,7 +179,21 @@ function enterVehicle(v) {
 function exitVehicle() {
   const v = driving;
   if (!v) return;
-  if (v.kind === 'plane' && v.state === 'air') { hud.toast('Land first', 900); return; }
+  if (v.kind === 'plane' && v.state === 'air') {
+    // Bail out: drop below the plane with its momentum; the plane flies itself back to the dock.
+    const p = v.pos.clone();
+    p.y -= 2.5;
+    driving = null;
+    player.avatar.root.visible = true;
+    player.reset(p, v.heading);
+    player.vel.copy(v.vel).multiplyScalar(0.6);
+    v.mesh.visible = false;
+    v.state = 'crashed';
+    v.crashTimer = 2.5;
+    setTouchMode('foot');
+    hud.toast('Bailed out! Jump to open your parachute', 1800);
+    return;
+  }
   let p;
   if (v.kind === 'plane') {
     p = v.dock.shore.clone();
@@ -451,13 +465,20 @@ function frame(now) {
       if (ev === 'checkpoint') hud.toast(`Checkpoint ${runner.index - 1} · ${fmtTime(runner.time)}`);
       if (ev === 'finish') finish();
     }
-    for (const v of vehicles()) if (v !== driving && v.kind === 'plane' && v.state === 'water') v.pos.y = -1.45 + Math.sin(elapsed * 1.7) * 0.05, v.sync(dt, elapsed);
+    for (const v of vehicles()) {
+      if (v === driving || v.kind !== 'plane') continue;
+      if (v.state === 'water') { v.pos.y = -1.45 + Math.sin(elapsed * 1.7) * 0.05; v.sync(dt, elapsed); }
+      if (v.state === 'crashed') { v.crashTimer -= dt; if (v.crashTimer <= 0) v.resetToDock(); }
+    }
     if (state !== 'paused') {
       if (driving) {
         const plane = driving.kind === 'plane';
         rig.updateChase(dt, driving.pos, driving.heading, driving.speed, look, plane
           ? { height: 3.2, dist: 15, speedDist: 0.12, maxExtra: 8, pitch: 0.18, fovScale: 0.45, roll: driving.roll }
           : { height: 1.9, dist: 7.5, speedDist: 0.08, maxExtra: 4, pitch: 0.16, fovScale: 0.6 });
+      } else if (player.mode === 'chute') {
+        rig.updateChase(dt, player.pos, player.facing, player.speed, look,
+          { height: 2.6, dist: 8.5, speedDist: 0.12, maxExtra: 3, pitch: 0.28, fovScale: 0.6, roll: player.chute ? player.chute.bank : 0 });
       } else {
         rig.update(dt, player, look);
       }
