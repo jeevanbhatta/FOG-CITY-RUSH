@@ -93,6 +93,38 @@ export function defineCourses(W, V) {
     fly.push(top(d.pos.x + hx * 160, 1.5, d.pos.z + hz * 160));
   }
 
+  // Parachute: off the roof of the tallest tower, glide down through rings to the plaza.
+  const drop = [];
+  {
+    const W2 = W.world;
+    let tall = null;
+    for (const s of W2.solids) {
+      if (s.kind !== 'building' || (s.maxX - s.minX) * (s.maxZ - s.minZ) < 600) continue;
+      if (!tall || s.y1 > tall.y1) tall = s;
+    }
+    if (tall && tall.y1 > 120) {
+      let cx = 0, cz = 0;
+      for (let i = 0; i < tall.n; i++) { cx += tall.xs[i]; cz += tall.zs[i]; }
+      cx /= tall.n; cz /= tall.n;
+      drop.push(top(cx, tall.y1 + 0.05, cz));
+      const D = Math.hypot(plaza[0] - cx, plaza[1] - cz);
+      for (const t of [0.22, 0.48, 0.74]) {
+        const x = cx + (plaza[0] - cx) * t, z = cz + (plaza[1] - cz) * t;
+        let y = tall.y1 - (D * t) / 2.1;
+        // Keep the ring clear of towers along the way.
+        for (let k = 0; k < 40; k++) {
+          const blocked = [[0, 0], [8, 0], [-8, 0], [0, 8], [0, -8]].some(([ox, oz]) =>
+            W2.pointBlocked(x + ox, y, z + oz) || W2.pointBlocked(x + ox, y + 10, z + oz));
+          if (!blocked) break;
+          y += 8;
+        }
+        drop.push(top(x, Math.max(12, y), z));
+      }
+      drop.push(ground(plaza[0], plaza[1]));
+      W.landmarks.tallest = { x: cx, z: cz, y: tall.y1, name: tall.name };
+    }
+  }
+
   return [
     {
       id: 'sprint', name: 'Embarcadero Sprint', difficulty: 'Easy',
@@ -108,6 +140,11 @@ export function defineCourses(W, V) {
       id: 'bridge', name: 'Bay Bridge Run', difficulty: 'Hard',
       blurb: 'Up the approach, onto the cable, over the tower, and zipline home.',
       points: bridge, start: plaza,
+    },
+    {
+      id: 'drop', name: 'Skyline Drop', difficulty: 'Medium', ring: 2.2, pace: 18,
+      blurb: 'Jump off the tallest tower downtown and steer your parachute down to the Ferry Building.',
+      points: drop, start: plaza,
     },
     {
       id: 'race', name: 'Waterfront Grand Prix', difficulty: 'Medium', vehicle: 'car', ring: 2.6,
@@ -146,7 +183,8 @@ export function resolveCourse(course, world) {
     const horiz = Math.hypot(b.x - a.x, b.z - a.z), dy = b.y - a.y;
     len += a.distanceTo(b);
     // Rough pace: 11 m/s running, ~12 m/s up ladders, ~28 m/s down long ziplines.
-    if (course.vehicle === 'car') est += horiz / 27;
+    if (course.pace) est += Math.hypot(horiz, dy) / course.pace;
+    else if (course.vehicle === 'car') est += horiz / 27;
     else if (course.vehicle === 'plane') est += Math.hypot(horiz, dy) / 36;
     else est += dy < -20 ? Math.hypot(horiz, dy) / 28 : horiz / 11 + Math.max(0, dy) / 12;
   }
