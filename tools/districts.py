@@ -25,6 +25,6 @@ DISTRICTS = {
         "coast": "37.7900,-122.4900,37.8235,-122.4200",
         "clip": (-2780, -2350, 1150, 650),
         "probes": [(37.8010, -122.4370), (37.8000, -122.4600), (37.8030, -122.4520)],
-        "bridge": {"names": ["golden gate bridge"], "refs": ["US 101"]},
+        "bridge": {"names": ["golden gate bridge"], "refs": []},  # US 101 also tags the Presidio viaducts
     },
 }
