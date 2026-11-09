@@ -5,6 +5,7 @@ Writes data/raw/embarcadero.osm.json. Run tools/build_map.py afterwards.
 Respects HTTPS_PROXY from the environment. Map data © OpenStreetMap contributors.
 """
 import sys
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -36,8 +37,18 @@ def main():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     body = urllib.parse.urlencode({"data": QUERY}).encode()
     req = urllib.request.Request(ENDPOINT, data=body, headers={"User-Agent": "fog-city-rush-map-builder/0.1"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        raw = resp.read()
+    raw = None
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                raw = resp.read()
+            break
+        except Exception as e:  # Overpass rate-limits busy clients; back off and retry.
+            wait = 20 * (attempt + 1)
+            print(f"attempt {attempt + 1} failed ({e}); retrying in {wait}s")
+            time.sleep(wait)
+    if raw is None:
+        sys.exit("Could not download map data from Overpass.")
     OUT.write_bytes(raw)
     print(f"wrote {OUT.relative_to(ROOT)} ({len(raw) // 1024} KB)")
 
