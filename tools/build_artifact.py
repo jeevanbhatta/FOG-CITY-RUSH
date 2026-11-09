@@ -28,9 +28,8 @@ def main():
     html = title + html.replace(title, "", 1)
     (OUT / "index.html").write_text(html)
     shutil.copytree(ROOT / "src", OUT / "src")
-    data = ROOT / "data" / "embarcadero.json"
-    if data.exists():
-        (OUT / "data").mkdir()
+    (OUT / "data").mkdir()
+    for data in sorted((ROOT / "data").glob("*.json")):
         shutil.copy(data, OUT / "data" / data.name)
     print("files:")
     for p in sorted(OUT.rglob("*")):
