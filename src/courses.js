@@ -125,6 +125,26 @@ export function defineCourses(W, V) {
     }
   }
 
+  // Relay: every way of getting around in one delivery.
+  // Run to the courier car, drive the waterfront, board the seaplane, climb over the skyline,
+  // bail out and parachute onto the clock tower balcony.
+  const relay = [];
+  if (V && V.cars[1] && V.dock && W.landmarks.tallest) {
+    const car = V.cars[1].home.pos;
+    relay.push(ground(plaza[0], plaza[1]));
+    relay.push(ground(car.x, car.z));
+    if (race.length > 3) {
+      relay.push(race[1]);
+      relay.push(race[2]);
+    }
+    relay.push(ground(V.dock.shore.x, V.dock.shore.z));
+    const T = W.landmarks.tallest;
+    const [ox, oz] = bi.at(BRIDGE.towers[0], 0);
+    relay.push(top(ox + (T.x - ox) * 0.5, 220, oz + (T.z - oz) * 0.5));
+    relay.push(top(T.x, T.y + 45, T.z));
+    relay.push(top(f.face[0] * 3.6, 72.1, f.face[1] * 3.6));
+  }
+
   return [
     {
       id: 'sprint', name: 'Embarcadero Sprint', difficulty: 'Easy',
@@ -145,6 +165,11 @@ export function defineCourses(W, V) {
       id: 'drop', name: 'Skyline Drop', difficulty: 'Medium', ring: 2.2, pace: 18,
       blurb: 'Jump off the tallest tower downtown and steer your parachute down to the Ferry Building.',
       points: drop, start: plaza,
+    },
+    {
+      id: 'relay', name: 'Fog City Express', difficulty: 'Hard', ring: 2.6, pace: 16, relay: true,
+      blurb: 'The full delivery: run to the car, drive the waterfront, fly over the skyline, bail out and parachute onto the clock tower.',
+      points: relay, start: plaza,
     },
     {
       id: 'race', name: 'Waterfront Grand Prix', difficulty: 'Medium', vehicle: 'car', ring: 2.6,

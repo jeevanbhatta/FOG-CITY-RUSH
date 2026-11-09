@@ -11,6 +11,21 @@ export class CameraRig {
     this.curDist = 5.5;
     this.target = new THREE.Vector3();
     this.roll = 0;
+    this.shakeAmt = 0;
+    this.reduceMotion = false;
+  }
+
+  shake(k) {
+    if (!this.reduceMotion) this.shakeAmt = Math.min(1.2, Math.max(this.shakeAmt, k));
+  }
+
+  applyShake(dt) {
+    if (this.shakeAmt <= 0.001) return;
+    const a = this.shakeAmt * 0.25;
+    this.camera.position.x += (Math.random() - 0.5) * a;
+    this.camera.position.y += (Math.random() - 0.5) * a;
+    this.camera.position.z += (Math.random() - 0.5) * a;
+    this.shakeAmt *= Math.exp(-dt * 7);
   }
 
   update(dt, player, look) {
@@ -49,6 +64,7 @@ export class CameraRig {
 
     this.applyRoll(dt, player);
     this.applyFov(dt, sp);
+    this.applyShake(dt);
   }
 
   // Chase camera for vehicles: free look with the mouse, drifts back behind after a moment.
@@ -82,8 +98,9 @@ export class CameraRig {
     this.camera.position.set(t.x + ox * d, t.y + oy * d + 0.4, t.z + oz * d);
     if (this.camera.position.y < -1.0) this.camera.position.y = -1.0;
     this.camera.lookAt(t);
-    if (opts.roll) this.camera.rotateZ(-opts.roll * 0.35);
+    if (opts.roll && !this.reduceMotion) this.camera.rotateZ(-opts.roll * 0.35);
     this.applyFov(dt, speed * opts.fovScale);
+    this.applyShake(dt);
   }
 
   applyRoll(dt, player) {
@@ -92,12 +109,13 @@ export class CameraRig {
       const rightX = Math.cos(this.yaw), rightZ = -Math.sin(this.yaw);
       wantRoll = (player.wall.nx * rightX + player.wall.nz * rightZ) * 0.08;
     }
+    if (this.reduceMotion) wantRoll = 0;
     this.roll += (wantRoll - this.roll) * Math.min(1, dt * 6);
     this.camera.rotateZ(this.roll);
   }
 
   applyFov(dt, sp) {
-    const fov = 70 + Math.min(16, Math.max(0, sp - 8) * 0.9);
+    const fov = this.reduceMotion ? 70 : 70 + Math.min(16, Math.max(0, sp - 8) * 0.9);
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 4);
       this.camera.updateProjectionMatrix();

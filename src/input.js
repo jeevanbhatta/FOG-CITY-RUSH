@@ -162,7 +162,7 @@ export class Input {
   consumeLook() {
     const dx = this.lookDX, dy = this.lookDY;
     this.lookDX = 0; this.lookDY = 0;
-    return [dx * this.sensitivity, dy * this.sensitivity];
+    return [dx * this.sensitivity, dy * this.sensitivity * (this.invertY ? -1 : 1)];
   }
 
   endFrame() {

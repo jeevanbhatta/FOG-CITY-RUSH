@@ -355,6 +355,7 @@ export class Player {
   }
 
   land(fallSpeed) {
+    this.landed = fallSpeed;
     const rolled = this.time - this.slidePressedAt < 0.3;
     if (fallSpeed > 21) {
       if (rolled) {
@@ -542,7 +543,7 @@ export class Player {
 }
 
 // --- The courier: a small low-poly runner built from primitives ---
-class Avatar {
+export class Avatar {
   constructor() {
     const root = new THREE.Group();
     const M = (color, roughness = 0.75, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
@@ -724,7 +725,9 @@ class Avatar {
       knee = [0.35, 0.2]; elbow = [-0.35, -0.35];
       roll = c.bank * 0.25;
     } else if (p.mode === 'climb') {
+      const rung = Math.floor(this.phase / Math.PI);
       this.phase += dt * 9 * Math.abs(p.climbDir || 0);
+      if (Math.floor(this.phase / Math.PI) !== rung) this.rung = true;
       const s = Math.sin(this.phase);
       set(this.armL, -2.6 + s * 0.4); set(this.armR, -2.6 - s * 0.4);
       set(this.legL, -0.5 - s * 0.4); set(this.legR, -0.5 + s * 0.4);
@@ -755,7 +758,9 @@ class Avatar {
         roll = side * 0.35;
       }
     } else if (sp > 0.6) {
+      const before = Math.floor(this.phase / Math.PI);
       this.phase += dt * (4 + sp * 0.75);
+      if (Math.floor(this.phase / Math.PI) !== before) this.stepped = true;
       const s = Math.sin(this.phase), amp = Math.min(1.1, 0.35 + sp * 0.07);
       set(this.armL, s * amp); set(this.armR, -s * amp);
       set(this.legL, -s * amp); set(this.legR, s * amp);

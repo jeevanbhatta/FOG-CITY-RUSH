@@ -43,17 +43,31 @@ class Batch {
     const acx = c[0] - a[0], acy = c[1] - a[1], acz = c[2] - a[2];
     const cx = aby * acz - abz * acy, cy = abz * acx - abx * acz, cz = abx * acy - aby * acx;
     let ua = uvs[0], ub = uvs[1], uc = uvs[2];
-    if (cx * n[0] + cy * n[1] + cz * n[2] < 0) { [b, c] = [c, b]; [ub, uc] = [uc, ub]; }
-    this.vert(a[0], a[1], a[2], n[0], n[1], n[2], ua[0], ua[1], color);
-    this.vert(b[0], b[1], b[2], n[0], n[1], n[2], ub[0], ub[1], color);
-    this.vert(c[0], c[1], c[2], n[0], n[1], n[2], uc[0], uc[1], color);
+    let ca = color, cb = color, cc = color;
+    if (Array.isArray(color)) [ca, cb, cc] = color;
+    if (cx * n[0] + cy * n[1] + cz * n[2] < 0) { [b, c] = [c, b]; [ub, uc] = [uc, ub]; [cb, cc] = [cc, cb]; }
+    this.vert(a[0], a[1], a[2], n[0], n[1], n[2], ua[0], ua[1], ca);
+    this.vert(b[0], b[1], b[2], n[0], n[1], n[2], ub[0], ub[1], cb);
+    this.vert(c[0], c[1], c[2], n[0], n[1], n[2], uc[0], uc[1], cc);
   }
   quad(a, b, c, d, n, uvs, color) {
-    this.tri(a, b, c, n, [uvs[0], uvs[1], uvs[2]], color);
-    this.tri(a, c, d, n, [uvs[0], uvs[2], uvs[3]], color);
+    // color may be one colour or four (one per corner).
+    const q = Array.isArray(color) ? color : [color, color, color, color];
+    this.tri(a, b, c, n, [uvs[0], uvs[1], uvs[2]], [q[0], q[1], q[2]]);
+    this.tri(a, c, d, n, [uvs[0], uvs[2], uvs[3]], [q[0], q[2], q[3]]);
   }
   // Vertical walls of a polygon prism. uScale/vScale are metres per texture tile.
-  walls(poly, y0, y1, color, uScale = 8, vScale = 7) {
+  walls(poly, y0, y1, color, uScale = 8, vScale = 7, ao = false) {
+    // Fake ambient occlusion: darken the first few metres of wall where it meets the street.
+    if (ao && y1 - y0 > 6) {
+      const dark = color.clone().multiplyScalar(0.55);
+      this.wallBand(poly, y0, y0 + 4, [dark, dark, color, color], uScale, vScale);
+      this.wallBand(poly, y0 + 4, y1, [color, color, color, color], uScale, vScale);
+      return;
+    }
+    this.wallBand(poly, y0, y1, [color, color, color, color], uScale, vScale);
+  }
+  wallBand(poly, y0, y1, cols, uScale, vScale) {
     const sign = polyArea(poly) > 0 ? 1 : -1;
     let run = 0;
     for (let i = 0; i < poly.length; i++) {
@@ -66,7 +80,7 @@ class Batch {
       run += len;
       this.quad(
         [a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y1, a[1]], n,
-        [[u0, y0 / vScale], [u1, y0 / vScale], [u1, y1 / vScale], [u0, y1 / vScale]], color,
+        [[u0, y0 / vScale], [u1, y0 / vScale], [u1, y1 / vScale], [u0, y1 / vScale]], cols,
       );
     }
   }
@@ -219,8 +233,14 @@ export function buildWorld(map, scene) {
   tex.masonry.repeat.set(1, 1);
 
   const mats = {
-    masonry: new THREE.MeshStandardMaterial({ map: tex.masonry, vertexColors: true, roughness: 0.88 }),
-    glass: new THREE.MeshStandardMaterial({ map: tex.glass, vertexColors: true, roughness: 0.32, metalness: 0.35 }),
+    masonry: new THREE.MeshStandardMaterial({
+      map: tex.masonry, vertexColors: true, roughness: 0.88,
+      emissive: 0xffd9a0, emissiveMap: TX.windowLightsTexture('masonry'), emissiveIntensity: 0,
+    }),
+    glass: new THREE.MeshStandardMaterial({
+      map: tex.glass, vertexColors: true, roughness: 0.32, metalness: 0.35,
+      emissive: 0xffe2b0, emissiveMap: TX.windowLightsTexture('glass'), emissiveIntensity: 0,
+    }),
     roof: new THREE.MeshStandardMaterial({ map: tex.roof, vertexColors: true, roughness: 0.95 }),
     ground: new THREE.MeshStandardMaterial({ map: tex.concrete, vertexColors: true, roughness: 0.95 }),
     road: new THREE.MeshStandardMaterial({
@@ -312,15 +332,20 @@ export function buildWorld(map, scene) {
     if (blocked) return;
     const st = styleFor(b, i);
     const tile = st.glass ? walls.glass : walls.masonry;
-    tile.get(cx, cz).walls(b.p, y0, b.h, st.wall, st.glass ? 6 : 8, 7);
+    tile.get(cx, cz).walls(b.p, y0, b.h, st.wall, st.glass ? 6 : 8, 7, y0 === 0);
     roofs.get(cx, cz).cap(b.p, b.h, st.roof, 5);
     if (y0 > 0) roofs.get(cx, cz).cap(b.p, y0, st.wall, 5, false);
     const s = world.addSolid(b.p, y0, b.h, { kind: 'building', name: b.n });
     s.height = b.h;
     buildingSolids.push({ s, b, i, cx, cz });
   });
-  group.add(...walls.masonry.meshes(mats.masonry));
-  group.add(...walls.glass.meshes(mats.glass));
+  const wallMeshes = [...walls.masonry.meshes(mats.masonry), ...walls.glass.meshes(mats.glass)];
+  group.add(...wallMeshes);
+  // Thin dark outlines on building corners and rooflines.
+  const outlines = new THREE.Group();
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x26323b, transparent: true, opacity: 0.32 });
+  for (const m of wallMeshes) outlines.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 35), lineMat));
+  group.add(outlines);
   group.add(...roofs.meshes(mats.roof));
 
   // ----- Landmarks -----
@@ -391,7 +416,11 @@ export function buildWorld(map, scene) {
   const fogBanks = addFogBanks(group, tex.puff, bounds);
 
   return {
-    world, group, landmarks, bounds, tex, mats, water, fogBanks, map,
+    world, group, landmarks, bounds, tex, mats, water, fogBanks, map, outlines,
+    setWindowLights(k) {
+      mats.masonry.emissiveIntensity = k * 0.75;
+      mats.glass.emissiveIntensity = k * 0.65;
+    },
     roofAt: (x, z) => world.floorAt(x, z, 1e6, 0).y,
     update(dt, t) {
       tex.water.offset.x = (t * 0.004) % 1;
