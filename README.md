@@ -37,7 +37,7 @@ python3 -m http.server 8000
 | Get in / out of a car or the seaplane (bail out in flight) | F | Drive / Fly button |
 | Car: drive, steer, handbrake drift | W/S, A/D, Space | Stick, Drift |
 | Seaplane: climb/dive, bank, throttle | W/S, A/D, Shift/C (I inverts W/S) | Stick, Power + / − |
-| Restart run / pause | R / Esc | Pause button |
+| Restart run (free roam: back to safe ground) / pause | R / Esc | Pause button |
 | Toggle minimap / invert seaplane pitch | M / I | Settings |
 | FPS readout | F3 | Settings |
 | Show / hide control hints | H | Settings |
@@ -49,7 +49,11 @@ first visit.
 
 Gamepads work too: left stick runs (push all the way to sprint, or hold a trigger), right stick
 looks, A jumps, B slides, X grabs, Y drives or flies, the triggers set the seaplane throttle, and
-Start pauses. The d-pad and A move around the menus.
+Start pauses, View/Back restarts. The d-pad and A move around the menus.
+
+Small touches: switching tabs pauses a run, a quick restart has a 1.5 second countdown, the HUD
+shows the next medal you're chasing, the results say how far off the next medal you were, and in
+free roam the pointer leads to the nearest postcard you haven't found.
 
 ## Style and momentum
 

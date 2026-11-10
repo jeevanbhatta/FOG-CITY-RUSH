@@ -32,9 +32,12 @@ export class Hud {
     this.el.hud.hidden = !on;
   }
 
-  setCourse(name, best) {
+  setCourse(name, best, target) {
     this.el.course.textContent = name;
-    this.el.best.textContent = best != null ? `Best ${fmtTime(best)}` : '';
+    const parts = [];
+    if (best != null) parts.push(`Best ${fmtTime(best)}`);
+    if (target) parts.push(`${target.name} ${fmtTime(target.time)}`);
+    this.el.best.textContent = parts.join(' · ');
     this.el.time.hidden = name === 'Free roam';
     this.el.cp.hidden = name === 'Free roam';
   }

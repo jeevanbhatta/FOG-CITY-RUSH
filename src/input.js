@@ -3,7 +3,7 @@
 // Standard gamepad layout (Xbox names): buttons are folded into pseudo key codes.
 const PAD_BUTTONS = {
   0: 'pad:jump', 1: 'pad:slide', 2: 'pad:grab', 3: 'pad:use', 4: 'pad:throttleDown', 5: 'pad:sprint',
-  6: 'pad:throttleDown', 7: 'pad:sprint', 9: 'pad:start', 10: 'pad:l3', 12: 'pad:up', 13: 'pad:down', 14: 'pad:left', 15: 'pad:right',
+  6: 'pad:throttleDown', 7: 'pad:sprint', 8: 'pad:back', 9: 'pad:start', 10: 'pad:l3', 12: 'pad:up', 13: 'pad:down', 14: 'pad:left', 15: 'pad:right',
 };
 const DEAD = 0.16;
 const dz = (v) => (Math.abs(v) < DEAD ? 0 : (v - Math.sign(v) * DEAD) / (1 - DEAD));

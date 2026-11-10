@@ -500,7 +500,17 @@ function resetAllVehicles() {
   if (V.plane) V.plane.resetToDock();
 }
 
+// The next medal you haven't earned yet on a course (or null once you hold gold).
+function nextMedal(c) {
+  const best = store.get('best.' + c.id), m = c.medals;
+  for (const [name, time] of [['Bronze', m.bronze], ['Silver', m.silver], ['Gold', m.gold]]) {
+    if (best == null || best > time) return { name, time };
+  }
+  return null;
+}
+
 function startCourse(c) {
+  const retry = active === c && state !== 'menu';
   if (driving) exitVehicle(true);
   store.set('last.' + D.id, c.id);
   active = c;
@@ -515,7 +525,7 @@ function startCourse(c) {
     enterVehicle(V.plane);
   }
   rival = challenge && challenge.course === c ? challenge : null;
-  hud.setCourse(c.name, rival ? null : store.get('best.' + c.id));
+  hud.setCourse(c.name, rival ? null : store.get('best.' + c.id), rival ? null : nextMedal(c));
   if (rival) hud.setRival(rival.name, rival.time);
   ghost.load(rival ? rival.samples : store.get('ghost.' + c.id));
   ghost.setRival(!!rival);
@@ -524,7 +534,8 @@ function startCourse(c) {
   recorder.start();
   parcels.show(false);
   state = 'countdown';
-  countdown = 3.0;
+  // A quick restart gets a short countdown: you already know the course.
+  countdown = retry ? 1.5 : 3.0;
   lastBeep = 4;
   showScreen(null);
   hud.show(true);
@@ -603,7 +614,10 @@ function finish() {
   const medal = t <= m.gold ? 'Gold' : t <= m.silver ? 'Silver' : t <= m.bronze ? 'Bronze' : null;
   $('#res-course').textContent = active.name;
   $('#res-time').textContent = fmtTime(t);
-  $('#res-medal').textContent = medal ? `${medal} medal` : `No medal. Bronze is ${fmtTime(m.bronze)}`;
+  // Say how close the next medal was.
+  const up = medal === 'Gold' ? null : medal === 'Silver' ? ['Gold', m.gold] : medal === 'Bronze' ? ['Silver', m.silver] : ['Bronze', m.bronze];
+  const gap = up ? ` · ${(t - up[1]).toFixed(2)} s off ${up[0]}` : '';
+  $('#res-medal').textContent = (medal ? `${medal} medal` : 'No medal') + gap;
   $('#res-medal').dataset.medal = (medal || 'none').toLowerCase();
   const rv = $('#res-rival');
   rv.hidden = !rival;
@@ -851,6 +865,23 @@ window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);
 document.addEventListener('click', (e) => { if (e.target.closest('button')) sound.click(); });
 
+// Switching tabs or windows pauses a run instead of letting the clock run on.
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+window.addEventListener('blur', () => { if (state === 'play' || state === 'countdown') pause(); });
+
+// Free roam: R puts you back somewhere safe if you're stuck (and rights a stuck car).
+function unstick() {
+  if (driving && driving.kind === 'plane') { driving.resetToDock(); rig.yaw = driving.heading + Math.PI; hud.toast('Back at the dock', 1000); return; }
+  if (driving) {
+    const fl = W.world.floorAt(driving.pos.x, driving.pos.z, driving.pos.y + 3, 0);
+    resetVehicleAt(driving, new THREE.Vector3(driving.pos.x, fl.solid ? fl.y : driving.pos.y, driving.pos.z), null, false);
+    hud.toast('Car back on its wheels', 1000);
+    return;
+  }
+  spawnAt(player.safe.clone(), null);
+  hud.toast('Back on safe ground', 1000);
+}
+
 document.addEventListener('pointerlockchange', () => {
   if (!document.pointerLockElement && (state === 'play' || state === 'countdown') && !isTouch) pause();
 });
@@ -860,6 +891,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'Escape') pause();
   if (e.code === 'KeyR' && (state === 'play' || state === 'countdown' || state === 'results') && active) startCourse(active);
+  else if (e.code === 'KeyR' && state === 'play' && !active) unstick();
   if (e.code === 'Enter' && state === 'results') startCourse(active);
   if (e.code === 'KeyI') {
     S.invertFlight = !S.invertFlight;
@@ -886,6 +918,10 @@ window.addEventListener('keydown', (e) => {
 
 // ---------- gamepad on menus: d-pad moves focus, A presses, Start pauses ----------
 function padMenus() {
+  if (input.hit('pad:back')) {
+    if (active && (state === 'play' || state === 'countdown' || state === 'results')) startCourse(active);
+    else if (state === 'play') unstick();
+  }
   if (input.hit('pad:start')) {
     if (state === 'play' || state === 'countdown') pause();
     else if (state === 'paused') resume();
@@ -960,6 +996,7 @@ function updateKeyHints() {
     if (player.prompt && /parachute/i.test(player.prompt)) hint(pick('Space again to open your parachute', 'A again to open your parachute', 'Jump again to open your parachute'));
     else if (player.prompt && /fly|drive/.test(player.prompt)) hint(pick(player.prompt, player.prompt.replace('Press F', 'Press Y'), player.prompt.replace('Press F to', 'Tap')));
   }
+  if (dev === 'keys' || dev === 'pad') add(pick(K('R'), K('View'), null), active ? 'Restart' : 'Unstick');
   if (dev === 'keys') add(K('Esc'), 'Pause');
   if (dev === 'keys') add(K('H'), 'Hide hints');
   const html = items.join('');
@@ -1200,7 +1237,8 @@ function frame(now) {
     sun.target.position.copy(focus);
     speed3 = driving ? Math.abs(driving.speed) : (player.mode === 'zip' ? player.zip.speed : player.vel.length());
     hud.update({
-      runner, camera, next: runner.next, focus,
+      // Free roam: the pointer leads to the nearest postcard you haven't found.
+      runner, camera, next: runner.next || (!active && state === 'play' ? (parcels.nearestUncollected(focus) || {}).pos || null : null), focus,
       speed: driving ? Math.abs(driving.speed) : (player.mode === 'zip' ? player.zip.speed : player.speed),
       alt: focus.y,
       throttle: driving && driving.kind === 'plane' ? driving.throttle : null,
@@ -1318,5 +1356,5 @@ if (/\.github\.io$/.test(location.hostname)) {
 // Handy for testing from the console.
 window.__fcr = { sun,
   W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene, V,
-  combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
+  get countdown() { return countdown; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
 };
