@@ -573,7 +573,7 @@ function startFree(resume = false) {
   resetAllVehicles();
   const lp = store.get('lifePos');
   if (resume && lp) spawnAt(new THREE.Vector3(lp[0], lp[1], lp[2]), null);
-  else spawnAt(new THREE.Vector3(home.x, home.y, home.z), new THREE.Vector3(home.x + home.nx * 10, 0, home.z + home.nz * 10));
+  else spawnAt(...wakeSpot());
   hud.setCourse('City life', null);
   parcels.show(true);
   combo.reset();
@@ -1700,37 +1700,126 @@ const swimmer = (() => {
 })();
 
 // --- home and food trucks ---
-const home = (() => {
-  const items = W.buildings.filter((b) => !(b.b.b > 0) && b.b.h > 10 && b.b.h < 45 && Math.hypot(b.cx, b.cz) > 120 && Math.hypot(b.cx, b.cz) < 500);
-  items.sort((a, b) => Math.hypot(a.cx, a.cz) - Math.hypot(b.cx, b.cz));
+// Homes you can live in. A studio to start with; a waterfront loft and a penthouse to buy.
+// `home` always describes where you live now (fields are swapped in place when you move).
+function makeDoor(s, e, color) {
+  const j = (e + 1) % s.n;
+  const mx = (s.xs[e] + s.xs[j]) / 2, mz = (s.zs[e] + s.zs[j]) / 2;
+  const g = new THREE.Group();
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.7, 0.2), new THREE.MeshStandardMaterial({ color: 0x1f3440 }));
+  frame.position.y = 1.35;
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 2.4), new THREE.MeshStandardMaterial({ color: 0x3a2a1a, emissive: 0xffb860, emissiveIntensity: 0.6 }));
+  panel.position.set(0, 1.25, 0.11);
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.3, 0.08), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.5 }));
+  sign.position.set(0, 2.95, 0.12);
+  g.add(frame, panel, sign);
+  const fl = W.world.floorAt(mx + s.nxs[e] * 1.4, mz + s.nzs[e] * 1.4, 2, 0);
+  g.position.set(mx + s.nxs[e] * 0.02, fl.y, mz + s.nzs[e] * 0.02);
+  g.rotation.y = Math.atan2(s.nxs[e], s.nzs[e]);
+  scene.add(g);
+  return { g, sign };
+}
+function doorOn(items, test = () => true) {
   for (const it of items) {
     const s = it.s;
     for (let e = 0; e < s.n; e++) {
       const j = (e + 1) % s.n;
-      const len = Math.hypot(s.xs[j] - s.xs[e], s.zs[j] - s.zs[e]);
-      if (len < 5) continue;
+      if (Math.hypot(s.xs[j] - s.xs[e], s.zs[j] - s.zs[e]) < 5) continue;
       const mx = (s.xs[e] + s.xs[j]) / 2, mz = (s.zs[e] + s.zs[j]) / 2;
       const ox = mx + s.nxs[e] * 1.4, oz = mz + s.nzs[e] * 1.4;
       const fl = W.world.floorAt(ox, oz, 2, 0);
       if (!fl.solid || fl.y > 0.6 || W.world.pointBlocked(ox, 1, oz) || W.world.pointBlocked(ox + s.nxs[e] * 2, 1, oz + s.nzs[e] * 2)) continue;
-      // A door: frame plus a warm glowing panel.
-      const g = new THREE.Group();
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.7, 0.2), new THREE.MeshStandardMaterial({ color: 0x1f3440 }));
-      frame.position.y = 1.35;
-      const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 2.4), new THREE.MeshStandardMaterial({ color: 0x3a2a1a, emissive: 0xffb860, emissiveIntensity: 0.6 }));
-      panel.position.set(0, 1.25, 0.11);
-      const sign = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.3, 0.08), new THREE.MeshStandardMaterial({ color: 0xff6a2b, emissive: 0xff6a2b, emissiveIntensity: 0.5 }));
-      sign.position.set(0, 2.95, 0.12);
-      g.add(frame, panel, sign);
-      g.position.set(mx + s.nxs[e] * 0.02, fl.y, mz + s.nzs[e] * 0.02);
-      g.rotation.y = Math.atan2(s.nxs[e], s.nzs[e]);
-      scene.add(g);
-      return { x: ox, y: fl.y, z: oz, nx: s.nxs[e], nz: s.nzs[e] };
+      if (!test(ox, oz, s.nxs[e], s.nzs[e])) continue;
+      return { it, e, x: ox, y: fl.y, z: oz, nx: s.nxs[e], nz: s.nzs[e] };
     }
   }
-  const p = W.landmarks.hub.plaza;
-  return { x: p[0], y: 0, z: p[1], nx: 0, nz: 1, name: 'the plaza' };
+  return null;
+}
+const HOMES = (() => {
+  const out = [];
+  const ground = W.buildings.filter((b) => !(b.b.b > 0));
+  const near = (a, b) => Math.hypot(a.cx, a.cz) - Math.hypot(b.cx, b.cz);
+  // Studio: a modest block near the landmark.
+  const studio = doorOn(ground.filter((b) => b.b.h > 10 && b.b.h < 45 && Math.hypot(b.cx, b.cz) > 120 && Math.hypot(b.cx, b.cz) < 500).sort(near));
+  if (studio) out.push({ id: 'studio', name: 'Studio apartment', price: 0, mood: 0, ...studio });
+  // Loft: a door that looks out over the water.
+  const loft = doorOn(ground.filter((b) => b.b.h > 8 && Math.hypot(b.cx, b.cz) < 900).sort(near), (x, z, nx, nz) => {
+    for (const d of [20, 30, 40]) if (!W.world.floorAt(x + nx * d, z + nz * d, 2, 0).solid) return true;
+    return false;
+  });
+  if (loft && (!studio || loft.it !== studio.it)) out.push({ id: 'loft', name: 'Waterfront loft', price: 8000, mood: 10, ...loft });
+  // Penthouse: the tallest building around; you wake up on the roof.
+  const tall = ground.filter((b) => (b.s.maxX - b.s.minX) * (b.s.maxZ - b.s.minZ) > 300).sort((a, b) => b.s.y1 - a.s.y1).slice(0, 3);
+  const pent = doorOn(tall);
+  if (pent) out.push({ id: 'penthouse', name: 'Penthouse', price: 25000, mood: 20, roof: { x: pent.it.cx, y: pent.it.s.y1, z: pent.it.cz }, ...pent });
+  for (const h of out) {
+    const { g, sign } = makeDoor(h.it.s, h.e, h.id === 'studio' ? 0xff6a2b : 0x4f9a6a);
+    h.mesh = g; h.signMat = sign.material;
+  }
+  if (!out.length) { const p = W.landmarks.hub.plaza; out.push({ id: 'studio', name: 'Studio apartment', price: 0, mood: 0, x: p[0], y: 0, z: p[1], nx: 0, nz: 1 }); }
+  return out;
 })();
+const ownedHomes = new Set(['studio', ...(store.get(`homes.${D.id}`) || [])]);
+const home = {};
+function moveInto(id) {
+  const h = HOMES.find((k) => k.id === id) || HOMES[0];
+  Object.assign(home, { id: h.id, name: h.name, x: h.x, y: h.y, z: h.z, nx: h.nx, nz: h.nz, mood: h.mood, roof: h.roof || null });
+  store.set(`home.${D.id}`, h.id);
+  for (const k of HOMES) if (k.signMat) { const mine = k.id === h.id; k.signMat.color.set(mine ? 0xff6a2b : 0x4f9a6a); k.signMat.emissive.set(mine ? 0xff6a2b : 0x4f9a6a); }
+}
+moveInto(store.get(`home.${D.id}`) || 'studio');
+function buyHome(id) {
+  const h = HOMES.find((k) => k.id === id);
+  if (!h) return;
+  if (!ownedHomes.has(id)) {
+    if (cash < h.price) { hud.toast(`${h.name} costs $${h.price.toLocaleString()}`, 1400); return; }
+    addCash(-h.price);
+    ownedHomes.add(id);
+    store.set(`homes.${D.id}`, [...ownedHomes]);
+    sound.finish();
+  }
+  moveInto(id);
+  hud.toast(`You live in the ${h.name.toLowerCase()} now`, 1800);
+}
+// Waking up: at the door, or on the penthouse roof.
+function wakeSpot() {
+  if (home.roof) {
+    const fl = W.world.floorAt(home.roof.x, home.roof.z, home.roof.y + 1, 0);
+    if (fl.solid) return [new THREE.Vector3(home.roof.x, fl.y, home.roof.z), new THREE.Vector3(0, 0, 0)];
+  }
+  return [new THREE.Vector3(home.x, home.y, home.z), new THREE.Vector3(home.x + home.nx * 10, 0, home.z + home.nz * 10)];
+}
+
+// --- your own car: bought once, waiting by your door every morning ---
+let myCar = null;
+function placeMyCar() {
+  if (!store.get('mycar')) return;
+  const sx = -home.nz, sz = home.nx;
+  const p = findParking(W.world, home.x + home.nx * 6 + sx * 4, home.z + home.nz * 6 + sz * 4, Math.atan2(sx, sz));
+  if (!p) return;
+  if (!myCar) {
+    myCar = new Car(scene, p.x, p.y, p.z, Math.atan2(sx, sz), store.get('mycar.color') || 0x1f8a70);
+    V.cars.push(myCar);
+  }
+  myCar.repair();
+  myCar.place(p, Math.atan2(sx, sz));
+  myCar.home = { pos: p.clone(), heading: Math.atan2(sx, sz) };
+}
+placeMyCar();
+const CAR_COLORS = [0x1f8a70, 0xd1495b, 0x2f6f8f, 0xe0a030, 0x1f2a30, 0xf2efe6];
+function buyCar(color) {
+  if (!store.get('mycar')) {
+    if (cash < 3000) { hud.toast('Your own car costs $3,000', 1400); return; }
+    addCash(-3000);
+    store.set('mycar', true);
+    sound.finish();
+    hud.toast('Bought a car. It waits by your door every morning.', 2200);
+  }
+  store.set('mycar.color', color);
+  if (myCar) { myCar.color = color; myCar.repair(); }
+  placeMyCar();
+}
+
 const foodTrucks = (() => {
   const out = [];
   const colors = [0xd1495b, 0x2aa198, 0xe0a030, 0x3d5a80, 0x9b5de5, 0x4f9a6a];
@@ -1855,6 +1944,12 @@ function renderPhone() {
         ${SETS.map((S2) => `<span class="meta">${museum.sets.has(S2.id) ? '✓' : '·'} ${S2.name}: ${S2.items.filter((id) => museum.donated.has(id)).length} / ${S2.items.length} in the museum · $${S2.reward}</span>`).join('')}
         <span class="meta">Donate at the plaza by the landmark, or sell for half value.</span>
         ${finds.length ? '<button class="btn ghost" data-sell="1">Sell to a dealer</button>' : ''}</li>`;
+  $('#ph-homes').innerHTML = HOMES.map((h) => {
+    const mine = home.id === h.id, own = ownedHomes.has(h.id);
+    return `<li><span class="who">${h.name}${mine ? ' · home' : ''}</span><span class="meta">on ${placeName(h) || 'the waterfront'}${h.mood ? ` · +${h.mood} mood each night` : ''}${h.roof ? ' · wake up on the roof' : ''}</span>
+      ${mine ? '' : `<button class="btn ${own ? 'ghost' : ''}" data-home="${h.id}">${own ? 'Move back here' : `Buy · $${h.price.toLocaleString()}`}</button>`}</li>`;
+  }).join('') + `<li><span class="who">Your car</span><span class="meta">${store.get('mycar') ? 'Parked by your door every morning. Pick a colour:' : 'Buy a car of your own for $3,000. Pick a colour:'}</span>
+      <span class="row">${CAR_COLORS.map((c) => `<button class="swatch" data-car="${c}" style="background:#${c.toString(16).padStart(6, '0')}" aria-label="Car colour"></button>`).join('')}</span></li>`;
   $('#ph-inbox').innerHTML = s.inbox.slice(0, 12).map((m) => {
     const c = CONTACTS.find((k) => k.id === m.from);
     return `<li class="${m.unread ? 'unread' : ''}"><span class="who" style="color:${c ? c.color : '#1f3440'}">${c ? c.name : m.from}</span><span>${m.text}</span><span class="meta">Day ${m.day} · ${m.clock}</span></li>`;
@@ -1864,6 +1959,8 @@ function renderPhone() {
   $('#ph-mods').hidden = !extra;
   const P = $('#phone');
   P.querySelectorAll('[data-gig]').forEach((b) => b.addEventListener('click', () => { togglePhone(false); startGig(b.dataset.gig); }));
+  P.querySelectorAll('[data-home]').forEach((b) => b.addEventListener('click', () => { buyHome(b.dataset.home); renderPhone(); }));
+  P.querySelectorAll('[data-car]').forEach((b) => b.addEventListener('click', () => { buyCar(+b.dataset.car); renderPhone(); }));
   P.querySelectorAll('[data-sell]').forEach((b) => b.addEventListener('click', () => { sellFinds(); renderPhone(); }));
   P.querySelectorAll('[data-quit]').forEach((b) => b.addEventListener('click', () => { endJob('Gig cancelled'); renderPhone(); }));
   P.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => {
@@ -1897,6 +1994,7 @@ $('#btn-results-city').addEventListener('click', () => { lifeReturn = false; sta
 function endDay(passedOut) {
   moduleEvent('sleep', { passedOut });
   const sum = life.sleep(passedOut);
+  if (!passedOut && home.mood) life.mood(home.mood);
   if (sum.rent) addCash(-sum.rent);
   const done = sum.goals.filter((g) => g.done).length;
   $('#de-title').textContent = `Day ${sum.day}`;
@@ -1923,7 +2021,8 @@ function endDay(passedOut) {
 $('#btn-newday').addEventListener('click', () => {
   showScreen(null);
   hud.show(true);
-  spawnAt(new THREE.Vector3(home.x, home.y, home.z), new THREE.Vector3(home.x + home.nx * 10, 0, home.z + home.nz * 10));
+  placeMyCar();
+  spawnAt(...wakeSpot());
   fade();
   state = 'play';
   input.enabled = true;
@@ -2084,6 +2183,7 @@ function mapState() {
   if (job) marks.push({ x: job.target.x, z: job.target.z, color: '#ffd34d', r: 6, ring: true, label: (CAREERS.find((c) => c.id === job.career) || {}).name });
   if (!active) {
     marks.push({ x: home.x, z: home.z, color: '#ff6a2b', r: 5, ring: true, label: 'Home' });
+    for (const h of HOMES) if (h.id !== home.id && !ownedHomes.has(h.id)) marks.push({ x: h.x, z: h.z, color: '#4f9a6a', r: 4, label: `${h.name} for sale` });
     for (const t of foodTrucks) marks.push({ x: t.tx, z: t.tz, color: '#4f9a6a', r: 4, label: t.name });
   }
   if (!active) for (const m of modules) if (m.mapMarks) marks.push(...m.mapMarks());
