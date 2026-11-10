@@ -719,6 +719,7 @@ function renderMenu() {
   const next = last || courses.find((c) => medalOf(c) !== 'gold') || courses[0];
   $('#continue-sub').textContent = next ? `${last ? 'Continue' : 'Start'} · ${next.name}` : '';
   $('#btn-continue').onclick = () => (next ? startCourse(next) : startFree());
+  $('#btn-free').textContent = `City life · Day ${life.s.day}`;
   $('#challenge').hidden = !challenge;
   if (challenge) {
     const esc = (t) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -1978,6 +1979,12 @@ function renderPhone() {
   }));
 }
 $('#btn-phone').addEventListener('click', () => togglePhone());
+// Start City Life over: clears the day, needs, story, careers, finds, homes and car (not best times).
+$('#btn-newlife').addEventListener('click', () => {
+  if (!confirm('Start a new life? Your days, money, story, careers, finds, homes and car are reset. Best times and ghosts stay.')) return;
+  for (const k of ['life', 'lifePos', 'finds', 'museum', 'museum.sets', 'cash', 'career', 'mycar', 'mycar.color', 'friends', `homes.${D.id}`, `home.${D.id}`]) store.set(k, null);
+  location.reload();
+});
 // Buttons inside module sections of the phone: the module decides; re-render after.
 $('#ph-mods').addEventListener('click', (e) => {
   const t = e.target.closest('button, [data-action]');
