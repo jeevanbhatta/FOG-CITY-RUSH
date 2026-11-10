@@ -65,6 +65,6 @@ export class Combo {
     this.total += score;
     this.best = Math.max(this.best, score);
     this.chain = []; this.points = 0; this.timer = 0; this.last = null;
-    return n > 1 ? { lost: false, text: `${n} move combo +${score.toLocaleString()}`, score } : null;
+    return n > 1 ? { lost: false, text: `${n} move combo +${score.toLocaleString()}`, score, n } : null;
   }
 }

@@ -2,6 +2,19 @@
 
 A running list of what has been added, newest batch first, and what's queued next.
 
+## Batch 4: a living city
+
+1. **Weather**: clear, thick fog or rain, drifting every few minutes (or fixed in Settings). Rain dims the light, lights the windows, wets the roads (shinier, less grip) and drums on the roof.
+2. **Ferries** shuttle across the bay from the hub's waterfront and sound their horn when they leave.
+3. **Streetcars** run on the real tram tracks, stop now and then, and are solid.
+4. **24 achievements**, with a panel on the start page.
+5. **Photo mode** (O): the HUD hides, the world freezes, orbit with the mouse, zoom with the wheel, Enter saves a PNG.
+6. **Garage**: spend cash on a tuned engine, bigger nitro, a reinforced body and a stronger seaplane prop.
+7. **Speed traps** on the long streets record your best speed through each and pay for new records.
+8. **Daily Run**: a new street route every day, the same for everyone, run any way you like.
+9. **Seaplane smoke trail**: hold Space in the air.
+10. **Fast travel**: right-click the map ($50, on foot in free roam).
+
 ## Batch 3: open-world feel
 
 1. **Borrow any car in traffic** (F next to it). Up to three borrowed cars stay parked where you leave them.
@@ -37,13 +50,15 @@ Marina & Crissy Field district with the Golden Gate Bridge, per-district loading
 page, performance overlay and auto resolution, ghost-race links, combos and momentum, gamepads,
 GitHub Pages hosting with offline install.
 
-## Queued next
+## Queued next: City Life (a life, not just a race)
 
-- Day/night cycle that affects traffic density and street lamps lighting the pavement
-- Weather: rain with wet roads, heavy fog days
-- Cable cars running along the tram rails, which you can ride
-- Ferries crossing the bay on a schedule
-- Shops: spend cash on car paint, character outfits and a faster seaplane
-- Taxi-style passenger jobs and timed street races against AI drivers
-- Photo mode
-- Achievements
+- **Days and a clock**: the time of day becomes a calendar; each day starts at home.
+- **Needs**: energy (sleep at home), hunger (eat at cafés and food trucks), mood (fun, views, music).
+  Low energy slows you down, hunger drains energy, a good mood pays a little more.
+- **Home and rent**: an apartment near the hub; sleep to end the day and save; weekly rent.
+- **Daily goals**: three small things to do each day, e.g. eat breakfast, deliver two parcels, visit a view.
+- **Phone and contacts**: a boss, a friend and a pilot send messages with story missions built from
+  the game's pieces (deliver, race, fly, climb), told in short chapters.
+- **Career**: courier ranks unlock better-paying jobs and perks.
+- **End-of-day summary**: earned, spent, needs, goals done.
+- Later: passenger jobs, street races against AI drivers, buying a car, outfits.

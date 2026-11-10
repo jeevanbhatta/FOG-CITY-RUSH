@@ -116,6 +116,7 @@ export class Sound {
     if (!this.ctx) return;
     if (this.radioBus) this.radioBus.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
     if (this.hum) this.to(this.hum.g.gain, 0);
+    if (this.rainLoop) this.to(this.rainLoop.g.gain, 0);
     this.update({ wind: 0, zip: 0, car: null, plane: null, canopy: 0, t: 0 });
     this.to(this.wind.g.gain, 0);
   }
@@ -186,6 +187,17 @@ export class Sound {
   horn(far = 0) {
     const g = 0.09 * (1 - far * 0.8);
     this.tone(415, 0.38, 'square', g); this.tone(523, 0.38, 'square', g * 0.8);
+  }
+  // Rain on the roof: a hiss that follows the weather.
+  rainLevel(k) {
+    if (!this.ctx) return;
+    if (!this.rainLoop) this.rainLoop = this.noiseLoop('highpass', 1400, 0.4);
+    this.to(this.rainLoop.g.gain, k * 0.09, 0.4);
+  }
+  shipHorn(far = 0) {
+    if (!this.ctx) return;
+    const g = 0.12 * (1 - far * 0.85);
+    this.tone(98, 1.6, 'sawtooth', g * 0.5); this.tone(147, 1.6, 'triangle', g * 0.35);
   }
   cash() { this.tone(1568, 0.08, 'square', 0.05); this.tone(2093, 0.16, 'square', 0.05, null, 0.06); }
   boost() { this.burst(0.6, 'bandpass', 300, 0.25, 0.7); this.tone(120, 0.5, 'sawtooth', 0.06, 260); }

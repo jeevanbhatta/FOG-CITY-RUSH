@@ -45,6 +45,7 @@ function resolveCircle(world, p, r, yLow, yHigh, vel, bounce = 0) {
 export const CAR = {
   accel: 16, brake: 34, reverseMax: 11, max: 44, drag: 0.012, roll: 1.2,
   grip: 9, driftGrip: 1.6, steerRate: 2.4, step: 0.85, gravity: 26,
+  boostRefill: 0.08, armour: 1, // garage upgrades change these
 };
 
 export class Car {
@@ -88,7 +89,7 @@ export class Car {
 
   // Dent the car. Paint darkens as it wears.
   damage(n) {
-    this.health = Math.max(0, this.health - n);
+    this.health = Math.max(0, this.health - n * CAR.armour);
     const k = 0.45 + 0.55 * (this.health / 100);
     this.mesh.userData.paint.color.set(this.color).multiplyScalar(k);
   }
@@ -118,7 +119,7 @@ export class Car {
     // Nitro: hold boost with throttle to dump the tank into a burst of speed.
     this.boosting = !!ctl.boost && this.boost > 0.02 && thr > 0 && this.onGround;
     if (this.boosting) { this.boost = Math.max(0, this.boost - 0.32 * h); fs += 15 * h; }
-    else this.boost = Math.min(1, this.boost + 0.08 * h);
+    else this.boost = Math.min(1, this.boost + C.boostRefill * h);
     this.braking = (thr < 0 && fs > 0.5) || (thr > 0 && fs < -0.5) || !!ctl.handbrake;
     const top = this.boosting ? C.max * 1.35 : C.max;
 

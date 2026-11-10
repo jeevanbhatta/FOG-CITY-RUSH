@@ -17,6 +17,7 @@ export function defaultSettings(isTouch) {
     autoRes: true,
     showFps: false,
     keyHints: true,
+    weather: 'changes',
     look: 'courier',
     skin: 2,
   };

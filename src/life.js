@@ -180,3 +180,123 @@ export class Gulls {
     }
   }
 }
+
+// ---------- Ferries shuttling across the bay ----------
+function box(w, h, l, color, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), new THREE.MeshStandardMaterial({ color, roughness: 0.6 }));
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  return m;
+}
+
+export class Ferries {
+  // routes: [[ax, az, bx, bz]] straight water lanes; each gets a ferry going back and forth.
+  constructor(scene, routes) {
+    this.boats = routes.map(([ax, az, bx, bz], i) => {
+      const g = new THREE.Group();
+      g.add(box(9, 2.4, 34, 0xf2efe6, 0, 0.2, 0));          // hull
+      g.add(box(9.2, 0.5, 34.2, 0x1f3440, 0, -0.8, 0));     // waterline
+      g.add(box(7.5, 2.4, 22, 0xe9e4d8, 0, 2.6, -1));       // lower cabin
+      g.add(box(6.5, 2.2, 14, 0xdfd9cc, 0, 4.9, -2));       // upper cabin
+      g.add(box(7.6, 0.6, 22.2, 0x2f6f8f, 0, 3.4, -1));     // window band
+      g.add(box(1.6, 3, 1.6, 0xff6a2b, 0, 7.2, -4));        // funnel
+      scene.add(g);
+      const len = Math.hypot(bx - ax, bz - az);
+      return { g, ax, az, bx, bz, len, s: (i * 0.45) % 1 * len, dir: 1, wait: 0, turn: 0, heading: Math.atan2(bx - ax, bz - az), x: ax, z: az };
+    });
+  }
+
+  update(dt) {
+    const events = [];
+    for (const b of this.boats) {
+      if (b.wait > 0) {
+        b.wait -= dt;
+        b.turn = Math.min(1, b.turn + dt / 8);
+        if (b.wait <= 0) events.push({ x: b.x, z: b.z, depart: true });
+      } else {
+        b.s += 9 * b.dir * dt;
+        if (b.s > b.len || b.s < 0) { b.s = Math.max(0, Math.min(b.len, b.s)); b.dir *= -1; b.wait = 14; b.turn = 0; }
+      }
+      const t = b.s / b.len;
+      b.x = b.ax + (b.bx - b.ax) * t; b.z = b.az + (b.bz - b.az) * t;
+      const base = Math.atan2(b.bx - b.ax, b.bz - b.az) + (b.dir < 0 ? Math.PI : 0);
+      // Swing round while docked.
+      b.heading = b.wait > 0 ? base + Math.PI * (1 - b.turn) : base;
+      b.g.position.set(b.x, -1.2 + Math.sin(performance.now() / 900 + b.ax) * 0.12, b.z);
+      b.g.rotation.y = b.heading;
+    }
+    return events;
+  }
+}
+
+// ---------- Streetcars along the real tram tracks ----------
+export class Streetcars {
+  constructor(scene, rails) {
+    this.cars = [];
+    const colors = [[0x2e6b4f, 0xe9dfc4], [0xd8a23a, 0xf2ead6], [0x8a1f1f, 0xe9dfc4], [0x355f7a, 0xf2ead6]];
+    rails.forEach((p) => {
+      let len = 0;
+      for (let i = 1; i < p.length; i++) len += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+      if (len < 250 || this.cars.length >= 6) return;
+      const [c1, c2] = colors[this.cars.length % colors.length];
+      const g = new THREE.Group();
+      g.add(box(2.6, 1.6, 14, c1, 0, 1.2, 0));
+      g.add(box(2.62, 1.2, 13.4, c2, 0, 2.5, 0));
+      g.add(box(2.64, 0.7, 12.6, 0x24333d, 0, 2.55, 0));   // windows
+      g.add(box(2.2, 0.35, 13, 0x9aa2a8, 0, 3.25, 0));     // roof
+      g.add(box(0.1, 1.6, 0.1, 0x222222, 0, 4.2, 4.5));    // trolley pole
+      scene.add(g);
+      this.cars.push({ g, p, len, s: Math.random() * len, dir: 1, x: 0, z: 0, fx: 0, fz: 1, speed: 7, stop: 0 });
+    });
+  }
+
+  at(p, s) {
+    let acc = 0;
+    for (let i = 1; i < p.length; i++) {
+      const dx = p[i][0] - p[i - 1][0], dz = p[i][1] - p[i - 1][1], l = Math.hypot(dx, dz);
+      if (acc + l >= s || i === p.length - 1) {
+        const t = Math.min(1, Math.max(0, (s - acc) / (l || 1)));
+        return [p[i - 1][0] + dx * t, p[i - 1][1] + dz * t, dx / (l || 1), dz / (l || 1)];
+      }
+      acc += l;
+    }
+    return [p[0][0], p[0][1], 1, 0];
+  }
+
+  update(dt, obstacles = []) {
+    for (const c of this.cars) {
+      let want = 7;
+      for (const o of obstacles) {
+        const dx = o.x - c.x, dz = o.z - c.z;
+        const ahead = dx * c.fx + dz * c.fz, side = Math.abs(dx * c.fz - dz * c.fx);
+        if (ahead > 0 && ahead < 18 && side < 2.6) want = 0;
+      }
+      if (c.stop > 0) { c.stop -= dt; want = 0; }
+      else if (Math.random() < dt / 40) c.stop = 8; // stops now and then, as if at a platform
+      c.speed += (want - c.speed) * Math.min(1, dt * 1.5);
+      c.s += c.speed * c.dir * dt;
+      if (c.s > c.len || c.s < 0) { c.s = Math.max(0, Math.min(c.len, c.s)); c.dir *= -1; c.stop = 6; }
+      const [x, z, dx, dz] = this.at(c.p, c.s);
+      c.x = x; c.z = z; c.fx = dx * c.dir; c.fz = dz * c.dir;
+      c.g.position.set(x, 0.05, z);
+      c.g.rotation.y = Math.atan2(c.fx, c.fz);
+    }
+  }
+
+  // Push a circle (x, z, r) out of any streetcar; returns the push normal or null.
+  push(pos, r) {
+    for (const c of this.cars) {
+      const dx = pos.x - c.x, dz = pos.z - c.z;
+      const along = dx * c.fx + dz * c.fz, side = dx * c.fz - dz * c.fx;
+      const ha = 7 + r, hs = 1.3 + r;
+      if (Math.abs(along) < ha && Math.abs(side) < hs && pos.y < 3.5) {
+        const pa = ha - Math.abs(along), ps = hs - Math.abs(side);
+        let nx, nz;
+        if (ps < pa) { const sg = Math.sign(side) || 1; nx = c.fz * sg; nz = -c.fx * sg; pos.x += nx * ps; pos.z += nz * ps; }
+        else { const sg = Math.sign(along) || 1; nx = c.fx * sg; nz = c.fz * sg; pos.x += nx * pa; pos.z += nz * pa; }
+        return { nx, nz, car: c };
+      }
+    }
+    return null;
+  }
+}

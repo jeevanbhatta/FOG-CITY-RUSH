@@ -6,18 +6,20 @@ import { Input } from './input.js';
 import { Hud, fmtTime } from './hud.js';
 import { defineCourses, resolveCourse, CourseRunner } from './courses.js';
 import { fallbackMap } from './fallback-map.js';
-import { Car, Seaplane, findParking, findWater } from './vehicles.js';
+import { Car, Seaplane, findParking, findWater, CAR, PLANE } from './vehicles.js';
 import { Sound } from './audio.js';
 import { Particles } from './particles.js';
 import { Ghost, GhostRecorder } from './ghost.js';
 import { loadSettings, saveSettings, QUALITY } from './settings.js';
 import { Sky } from './sky.js';
-import { Traffic, Gulls } from './life.js';
+import { Traffic, Gulls, Ferries, Streetcars } from './life.js';
 import { Minimap } from './minimap.js';
 import { placeParcels, Parcels } from './parcels.js';
 import { Details } from './details.js';
 import { DISTRICTS, pickDistrict } from './districts.js';
 import { Combo } from './combo.js';
+import { Weather } from './weather.js';
+import { Achievements, ACHIEVEMENTS } from './achievements.js';
 import { Pedestrians } from './pedestrians.js';
 import { BigMap } from './bigmap.js';
 import { encodeRace, decodeRace, raceUrl, readRaceFromUrl } from './share.js';
@@ -249,6 +251,7 @@ function updateCombo(dt) {
   const notice = driving ? combo.bank() : combo.update(dt, player, player.events);
   player.flow = combo.flow;
   if (notice) {
+    if (notice.n && notice.n > comboMovesBest) { comboMovesBest = notice.n; store.set('combo.moves', comboMovesBest); }
     hud.toast(notice.text, 1300);
     if (!notice.lost) { sound.chime(); if (combo.best > (store.get('combo.best') || 0)) store.set('combo.best', combo.best); }
   }
@@ -337,6 +340,7 @@ function openSettings(from) {
   $('#set-autores').checked = S.autoRes;
   $('#set-fps').checked = S.showFps;
   $('#set-hints').checked = S.keyHints;
+  $('#set-weather').value = S.weather || 'changes';
   showScreen('#settings');
 }
 const bindSetting = (id, key, read) => $(id).addEventListener('input', (e) => {
@@ -453,6 +457,7 @@ function exitVehicle(silent = false) {
     v.crashTimer = 2.5;
     setTouchMode('foot');
     hud.toast('Bailed out! Jump to open your parachute', 1800);
+    ach.unlock('bail');
     sound.whoosh();
     return;
   }
@@ -629,6 +634,7 @@ function finish() {
   const rank = (x) => (x == null ? 0 : x <= m.gold ? 3 : x <= m.silver ? 2 : x <= m.bronze ? 1 : 0);
   const PRIZE = [0, 100, 250, 500];
   if (rank(t) > rank(prev)) addCash(PRIZE[rank(t)] - PRIZE[rank(prev)]);
+  if (active.daily) ach.unlock('daily');
   $('#res-course').textContent = active.name;
   $('#res-time').textContent = fmtTime(t);
   // Say how close the next medal was.
@@ -681,7 +687,7 @@ const ICONS = {
 };
 const TABS = [['all', 'All'], ['parkour', 'Parkour'], ['drive', 'Drive'], ['fly', 'Fly'], ['mission', 'Missions']];
 function category(c) {
-  if (c.relay) return 'mission';
+  if (c.relay || c.daily) return 'mission';
   if (c.vehicle === 'car') return 'drive';
   if (c.vehicle === 'plane' || c.kind === 'Parachute') return 'fly';
   return 'parkour';
@@ -766,6 +772,8 @@ function renderMenu() {
   list.querySelectorAll('button.course').forEach((b) => b.addEventListener('click', () => startCourse(courses[+b.dataset.i])));
   renderCharacter();
   renderDistricts();
+  renderGarage();
+  renderAchievements();
 }
 
 function renderDistricts() {
@@ -913,6 +921,12 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP') {
     if (state === 'paused') resume(); else pause();
   }
+  if (state === 'photo') {
+    if (e.code === 'Enter') savePhoto();
+    if (e.code === 'Escape' || e.code === 'KeyO') { togglePhoto(false); input.enabled = true; }
+    return;
+  }
+  if (e.code === 'KeyO' && state === 'play') { togglePhoto(true); input.enabled = false; return; }
   if (e.code === 'Escape') { if (bigmap.open) toggleMap(false); else pause(); }
   if (e.code === 'Tab' && (state === 'play' || state === 'map')) { e.preventDefault(); toggleMap(); }
   if (state === 'play' && driving && driving.kind === 'car' && e.code === 'KeyG') honk();
@@ -994,6 +1008,7 @@ function updateKeyHints() {
     add(pick(K(climb) + '/' + K(dive), K('L↕'), null), 'Climb / dive');
     add(pick(K('A') + K('D'), K('L↔'), null), 'Bank');
     add(pick(K('F'), K('Y'), null), v.state === 'air' ? 'Bail out' : 'Get out');
+    if (v.state === 'air') add(pick(K('Space'), K('A'), null), 'Smoke trail');
     if (v.state === 'water') hint(pick('Full throttle, then hold W above 100 km/h to take off', 'Hold RT, then push up above 100 km/h to take off', 'Hold Power +, then push the stick up above 100 km/h to take off'));
     if (dev === 'keys') add(K('I'), 'Swap W/S');
   } else if (v) {
@@ -1074,6 +1089,10 @@ function stepVehicle(dt, frozen) {
     const pitchIn = (S.invertFlight ? -1 : 1) * mv.y;
     const thr = frozen ? 0 : (input.throttleUp ? 1 : 0) - (input.throttleDown ? 1 : 0);
     v.update(dt, { pitch: pitchIn, bank: mv.x, throttleDelta: thr }, W.world, elapsed);
+    if (!frozen && input.jump && v.state === 'air') {
+      const bx = -Math.sin(v.heading) * 5, bz = -Math.cos(v.heading) * 5;
+      particles.emit(v.pos.x + bx, v.pos.y, v.pos.z + bz, { color: 0xffffff, count: 2, speed: 0.3, up: 0.1, life: 4, size: 2.2, grow: 3, drag: 0.5, alpha: 0.5, jitter: 0.6 });
+    }
     if (v.state === 'water' && Math.abs(v.speed) > 3) {
       const sx = -Math.cos(v.heading) * 1.5, sz = Math.sin(v.heading) * 1.5;
       for (const s of [-1, 1]) particles.spray(v.pos.x + sx * s, -1.4, v.pos.z + sz * s, -Math.sin(v.heading) * 2, -Math.cos(v.heading) * 2);
@@ -1097,7 +1116,7 @@ function stepVehicle(dt, frozen) {
         sound.splash(0.6);
         hud.toast(e, 900);
       } else {
-        if (e === 'Takeoff') sound.whoosh();
+        if (e === 'Takeoff') { sound.whoosh(); ach.unlock('takeoff'); }
         hud.toast(e, 900);
       }
     }
@@ -1136,6 +1155,8 @@ function footEffects(dt) {
     if (e === 'Roll') particles.dust(p.pos.x, p.pos.y, p.pos.z, 1);
     if (e === 'Parachute') { sound.whoosh(); rig.shake(0.3); tip('chute', isTouch ? 'Stick left/right to turn, up to dive, down to flare. Jump again to cut away.' : 'A/D to turn, W to dive, S to flare. Jump again to cut away.'); }
     if (e === 'Chute collapsed') rig.shake(0.5);
+    if (e === 'Zipline') ach.unlock('zip');
+    if (e === 'Landed') ach.unlock('chute');
     if (e === 'Zipline') { sound.click(); tip('zip', 'Jump to let go early and keep your speed.'); }
     if (e === 'Climb') tip('ladder', 'Ladders run all the way to the roof. Jump to let go.');
     if (e === 'Splash') { particles.splash(p.pos.x, -1.6, p.pos.z, 1); sound.splash(1); }
@@ -1210,6 +1231,7 @@ function borrowCar(tc) {
   }
   enterVehicle(car);
   hud.toast('Borrowed a car', 900);
+  ach.unlock('borrow');
 }
 
 // --- damage and wrecks ---
@@ -1223,6 +1245,7 @@ function carDamage(v, impact) {
     sound.crash();
     rig.shake(1.2);
     hud.toast('Wrecked', 1600);
+    ach.unlock('wreck');
     wreckT = 1.4;
   }
 }
@@ -1501,6 +1524,256 @@ function openWorld(dt, realDt) {
   if (statsSave <= 0) { statsSave = 5; store.set('stats', stats); }
 }
 
+
+// ================= batch 4: weather, boats, streetcars, achievements, photo mode, garage, traps, daily run =================
+const weather = new Weather(scene, W.mats);
+weather.setMode(S.weather || 'changes');
+
+// --- ferries: two lanes out from the hub's waterfront ---
+const ferries = (() => {
+  const h = W.landmarks.hub;
+  const [dx, dz] = D.dockDir || [-h.face[0], -h.face[1]];
+  const routes = [];
+  for (const side of [-1, 1]) {
+    const sx = -dz * side * 140, sz = dx * side * 140;
+    const a = findWater(W.world, sx + dx * 80, sz + dz * 80, dx, dz);
+    if (!a) continue;
+    let L = 1300;
+    while (L > 300 && W.world.floorAt(a.x + dx * L, a.z + dz * L, 5, 0).solid) L -= 100;
+    routes.push([a.x + dx * 20, a.z + dz * 20, a.x + dx * L, a.z + dz * L]);
+  }
+  return new Ferries(scene, routes);
+})();
+const streetcars = new Streetcars(scene, map.rails || []);
+
+// --- achievements ---
+const ach = new Achievements(store.get('ach'), (a, list) => {
+  store.set('ach', list);
+  hud.toast(`Achievement · ${a.name}`, 2200);
+  [784, 1175, 1568].forEach((f, i) => sound.tone(f, 0.25, 'triangle', 0.1, null, i * 0.07));
+});
+let comboMovesBest = store.get('combo.moves') || 0;
+function achSnapshot() {
+  return {
+    medals: courses.filter((c) => !c.daily).map((c) => medalOf(c)),
+    postcards: parcels.count, postcardTotal: parcels.total, stats, cash, comboBest: comboMovesBest,
+  };
+}
+
+// --- garage upgrades (bought with cash, saved per browser) ---
+const UPGRADES = [
+  { id: 'engine', name: 'Tuned engine', desc: 'Higher top speed and quicker acceleration.', price: 2500, apply: () => { CAR.max = 50; CAR.accel = 18.5; } },
+  { id: 'nitro', name: 'Bigger nitro', desc: 'The boost tank refills twice as fast.', price: 1500, apply: () => { CAR.boostRefill = 0.16; } },
+  { id: 'armour', name: 'Reinforced body', desc: 'Bumps do half the damage.', price: 1200, apply: () => { CAR.armour = 0.5; } },
+  { id: 'prop', name: 'Seaplane prop', desc: 'More thrust: faster take-offs and climbs.', price: 2000, apply: () => { PLANE.thrust = 28; } },
+];
+const owned = new Set(store.get('upgrades') || []);
+for (const u of UPGRADES) if (owned.has(u.id)) u.apply();
+function renderGarage() {
+  const box = $('#garage');
+  box.innerHTML = '';
+  $('#garage-val').textContent = `${owned.size} / ${UPGRADES.length} · $${Math.round(cash).toLocaleString()}`;
+  for (const u of UPGRADES) {
+    const b = document.createElement('button');
+    b.className = 'upg';
+    b.id = 'upg-' + u.id;
+    const have = owned.has(u.id);
+    b.setAttribute('aria-pressed', String(have));
+    b.disabled = !have && cash < u.price;
+    b.innerHTML = `<b>${u.name}</b><span>${u.desc}</span><em>${have ? 'Installed' : '$' + u.price.toLocaleString()}</em>`;
+    b.addEventListener('click', () => {
+      if (have || cash < u.price) return;
+      addCash(-u.price);
+      owned.add(u.id);
+      store.set('upgrades', [...owned]);
+      u.apply();
+      renderGarage();
+    });
+    box.appendChild(b);
+  }
+}
+function renderAchievements() {
+  $('#ach-val').textContent = `${ach.count} / ${ACHIEVEMENTS.length}`;
+  $('#ach-list').innerHTML = ACHIEVEMENTS.map((a) => `<li class="${ach.got.has(a.id) ? 'got' : ''}"><b>${a.name}</b><span>${a.desc}</span></li>`).join('');
+}
+
+// --- speed traps on the long streets ---
+const traps = (() => {
+  const out = [];
+  const roads = map.roads.filter((r) => ['primary', 'secondary', 'trunk', 'tertiary'].includes(r.k)).sort((a, b) => b.p.length - a.p.length);
+  for (const r of roads) {
+    for (let i = 1; i < r.p.length && out.length < 4; i++) {
+      const a = r.p[i - 1], b = r.p[i];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < 90) continue;
+      const x = (a[0] + b[0]) / 2, z = (a[1] + b[1]) / 2;
+      if (out.some((t) => Math.hypot(t.x - x, t.z - z) < 350)) continue;
+      if (!W.world.floorAt(x, z, 3, 0).solid) continue;
+      out.push({ x, z, dx: (b[0] - a[0]) / len, dz: (b[1] - a[1]) / len, w: r.w, name: r.n || 'the street', cool: 0 });
+    }
+    if (out.length >= 4) break;
+  }
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.6 });
+  const camMat = new THREE.MeshStandardMaterial({ color: 0x9b5de5, emissive: 0x9b5de5, emissiveIntensity: 0.4 });
+  out.forEach((t, i) => {
+    const sx = -t.dz * (t.w / 2 + 1.5), sz = t.dx * (t.w / 2 + 1.5);
+    const g = new THREE.Group();
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 5, 8), poleMat);
+    pole.position.y = 2.5;
+    const cam = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 1), camMat);
+    cam.position.y = 5;
+    g.add(pole, cam);
+    g.position.set(t.x + sx, 0, t.z + sz);
+    scene.add(g);
+    t.mesh = cam;
+    t.key = `trap.${D.id}.${i}`;
+  });
+  return out;
+})();
+function trapTick(dt) {
+  const v = driving;
+  for (const t of traps) {
+    t.cool -= dt;
+    if (!v || v.kind !== 'car' || t.cool > 0) continue;
+    if (Math.hypot(v.pos.x - t.x, v.pos.z - t.z) > t.w / 2 + 4) continue;
+    t.cool = 4;
+    const kmh = Math.round(v.speed * 3.6);
+    const best = store.get(t.key) || 0;
+    t.mesh.material.emissiveIntensity = 3;
+    setTimeout(() => { t.mesh.material.emissiveIntensity = 0.4; }, 200);
+    sound.tone(1800, 0.08, 'square', 0.06);
+    if (kmh >= 150) ach.unlock('speed');
+    if (kmh > best) {
+      store.set(t.key, kmh);
+      const pay = Math.max(0, kmh - best);
+      addCash(pay);
+      hud.toast(`Speed trap · ${t.name} · ${kmh} km/h  New best  +$${pay}`, 1800);
+    } else hud.toast(`Speed trap · ${kmh} km/h  (best ${best})`, 1300);
+  }
+}
+
+// --- daily run: a fresh street route every day, same for everyone ---
+(() => {
+  const now = new Date();
+  const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  let seed = +ymd ^ (D.id.length * 7919);
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const nodes = [];
+  for (const r of STREETS) for (const q of r.p) nodes.push(q);
+  if (nodes.length < 20) return;
+  const plaza = W.landmarks.hub.plaza;
+  const pts = [{ kind: 'ground', x: plaza[0], z: plaza[1] }];
+  let cur = plaza;
+  for (let k = 0; k < 6; k++) {
+    let pick = null;
+    for (let tries = 0; tries < 400 && !pick; tries++) {
+      const q = nodes[Math.floor(rnd() * nodes.length)];
+      const d = Math.hypot(q[0] - cur[0], q[1] - cur[1]);
+      if (d < 200 || d > 420) continue;
+      if (pts.some((p) => Math.hypot(p.x - q[0], p.z - q[1]) < 150)) continue;
+      if (!W.world.floorAt(q[0], q[1], 3, 0).solid) continue;
+      pick = q;
+    }
+    if (!pick) break;
+    pts.push({ kind: 'ground', x: pick[0], z: pick[1] });
+    cur = pick;
+  }
+  if (pts.length < 4) return;
+  const label = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  courses.push(resolveCourse({
+    id: `${D.courseIds}daily.${ymd}`, name: `Daily Run · ${label}`, difficulty: 'Medium', daily: true, kind: 'Daily',
+    blurb: 'A new route through the streets every day. Any way you like: run, borrow a car, even fly.',
+    points: pts, start: plaza, pace: 12,
+  }, W.world));
+})();
+
+// --- photo mode (O) ---
+const photo = { yaw: 0, pitch: 0.3, dist: 9, prev: 'play' };
+function togglePhoto(on = state !== 'photo') {
+  if (on && state !== 'play') return;
+  if (on) {
+    photo.prev = state;
+    state = 'photo';
+    photo.yaw = rig.yaw; photo.pitch = 0.3; photo.dist = 9;
+    document.body.classList.add('photo');
+    $('#photo-ui').hidden = false;
+    sound.silence();
+  } else {
+    state = 'play';
+    document.body.classList.remove('photo');
+    $('#photo-ui').hidden = true;
+    if (driving && driving.kind === 'car') sound.setRadio(radioStation);
+  }
+}
+function photoFrame(realDt) {
+  const [lx, ly] = input.consumeLook();
+  photo.yaw -= lx; photo.pitch = Math.max(-0.2, Math.min(1.4, photo.pitch + ly));
+  const f = driving ? driving.pos : player.pos;
+  const cp = Math.cos(photo.pitch);
+  camera.position.set(f.x + Math.sin(photo.yaw) * cp * photo.dist, f.y + 1.2 + Math.sin(photo.pitch) * photo.dist, f.z + Math.cos(photo.yaw) * cp * photo.dist);
+  camera.lookAt(f.x, f.y + 1.2, f.z);
+}
+function savePhoto() {
+  renderer.render(scene, camera);
+  try {
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = `fog-city-rush-${Date.now()}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    hud.toast('Photo saved', 1000);
+    ach.unlock('photo');
+  } catch (_) { hud.toast('This browser blocked the download', 1400); }
+  const fl = $('#fade');
+  fl.style.background = '#fff'; fade();
+  setTimeout(() => { fl.style.background = ''; }, 700);
+}
+canvas.addEventListener('wheel', (e) => { if (state === 'photo') { photo.dist = Math.max(2.5, Math.min(60, photo.dist * (e.deltaY > 0 ? 1.1 : 0.9))); e.preventDefault(); } }, { passive: false });
+
+// --- fast travel: right-click the map ---
+$('#bigmap canvas').addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (driving || active) { hud.toast('Fast travel works on foot in free roam', 1200); return; }
+  const r = e.target.getBoundingClientRect();
+  const [x, z] = bigmap.toWorld((e.clientX - r.left) * bigmap.dpr, (e.clientY - r.top) * bigmap.dpr);
+  const fl = W.world.floorAt(x, z, 3, 0);
+  if (!fl.solid || W.world.pointBlocked(x, fl.y + 1, z)) { hud.toast("Can't fast travel there", 1000); return; }
+  if (cash < 50) { hud.toast('Fast travel costs $50', 1000); return; }
+  addCash(-50);
+  toggleMap(false);
+  spawnAt(new THREE.Vector3(x, fl.y, z), null);
+  fade();
+  hud.toast('Fast travel  −$50', 1000);
+});
+
+// --- per-frame tick for batch 4 ---
+let achT = 0;
+function worldExtras(dt, realDt) {
+  const focus = driving ? driving.pos : player.pos;
+  for (const ev of ferries.update(dt)) {
+    const d = Math.hypot(ev.x - focus.x, ev.z - focus.z);
+    if (d < 900 && state === 'play') sound.shipHorn(Math.min(1, d / 900));
+  }
+  streetcars.update(dt, state === 'play' ? [focus] : []);
+  if (state !== 'play') return;
+  // Streetcars are solid.
+  if (driving && driving.kind === 'car') {
+    const hit = streetcars.push(driving.pos, 2.2);
+    if (hit) {
+      const vn = driving.vel.x * hit.nx + driving.vel.z * hit.nz;
+      if (vn < 0) { driving.vel.x -= hit.nx * vn * 1.4; driving.vel.z -= hit.nz * vn * 1.4; if (-vn > 3) { carDamage(driving, -vn); sound.scrape(-vn * 2); particles.sparks(driving.pos.x, 1, driving.pos.z, 1); } }
+    }
+  } else if (!driving) streetcars.push(player.pos, 0.4);
+  trapTick(dt);
+  // Achievements by place and moment.
+  const h = W.landmarks.hub, bi = W.landmarks.bridgeInfo;
+  if (!driving && player.onGround && Math.hypot(player.pos.x, player.pos.z) < 12 && player.pos.y > h.balcony.y - 1) ach.unlock('hub-top');
+  if (!driving && player.onGround && player.pos.y > bi.towerTop - 1) ach.unlock('tower-top');
+  if (driving && driving.kind === 'car' && weather.k.rain > 0.6 && driving.speed > 8) ach.unlock('rain');
+  achT -= realDt;
+  if (achT <= 0) { achT = 1; ach.check(achSnapshot()); }
+}
+$('#set-weather').addEventListener('input', (e) => { S.weather = e.target.value; saveSettings(S); weather.setMode(S.weather); });
+
 // ---------- main loop ----------
 let last = performance.now();
 let elapsed = 0;
@@ -1518,6 +1791,8 @@ function frame(now) {
   padMenus();
   W.update(dt, elapsed);
   sky.apply(realDt, elapsed);
+  weather.apply(realDt, camera, sky, sun, hemi);
+  sound.rainLevel(state === 'play' || state === 'countdown' ? weather.k.rain : 0);
   W.setWindowLights(sky.lights);
   for (const f of W.fogBanks) f.material.color.copy(scene.fog.color).lerp(new THREE.Color(0xffffff), 0.35);
   const honks = traffic.update(dt, state === 'menu' ? [] : [driving ? driving.pos : player.pos]);
@@ -1525,6 +1800,7 @@ function frame(now) {
     const d = Math.hypot(h.x - player.pos.x, h.z - player.pos.z);
     if (d < 60 && state === 'play') sound.horn(d / 60);
   }
+  worldExtras(dt, realDt);
   if (state === 'play' || state === 'menu') {
     const th = [];
     if (state === 'play') {
@@ -1634,7 +1910,8 @@ function frame(now) {
       if (v.state === 'water') { v.pos.y = -1.45 + Math.sin(elapsed * 1.7) * 0.05; v.sync(dt, elapsed); }
       if (v.state === 'crashed') { v.crashTimer -= dt; if (v.crashTimer <= 0) v.resetToDock(); }
     }
-    if (state !== 'paused') {
+    if (state === 'photo') photoFrame(realDt);
+    else if (state !== 'paused') {
       if (driving) {
         const plane = driving.kind === 'plane';
         const cm = CAM_MODES[camMode];
@@ -1775,5 +2052,5 @@ if (/\.github\.io$/.test(location.hostname)) {
 // Handy for testing from the console.
 window.__fcr = { sun,
   W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene, V,
-  get countdown() { return countdown; }, get job() { return job; }, toggleJob, toggleMap, borrowCar, peds, bigmap, addCash, get cash() { return cash; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
+  get countdown() { return countdown; }, weather, ferries, streetcars, ach, traps, togglePhoto, get job() { return job; }, toggleJob, toggleMap, borrowCar, peds, bigmap, addCash, get cash() { return cash; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
 };
