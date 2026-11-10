@@ -22,7 +22,9 @@ export class Input {
     this.enabled = false;
     this.sensitivity = 0.0024;
 
+    this.device = matchMedia('(pointer: coarse)').matches ? 'touch' : 'keys'; // last thing the player used
     window.addEventListener('keydown', (e) => {
+      this.device = 'keys';
       if (e.repeat) return;
       const k = e.code;
       if (!this.keys.has(k)) this.pressed.add(k);
@@ -56,7 +58,8 @@ export class Input {
     // Show touch controls as soon as the device is touch-first or any touch happens.
     const markTouch = () => { this.isTouch = true; document.body.classList.add('touch'); };
     if (matchMedia('(pointer: coarse)').matches) markTouch();
-    window.addEventListener('touchstart', markTouch, { capture: true, passive: true });
+    window.addEventListener('touchstart', () => { markTouch(); this.device = 'touch'; }, { capture: true, passive: true });
+    window.addEventListener('mousedown', () => { this.device = 'keys'; });
 
     this.setupTouch(touchRoot);
     this.pad = { x: 0, y: 0, active: false, connected: false };
@@ -93,7 +96,7 @@ export class Input {
         if (!still) this.keys.delete(code);
       }
     });
-    if (any) P.active = true;
+    if (any) { P.active = true; this.device = 'pad'; }
   }
 
   setupTouch(root) {

@@ -16,6 +16,7 @@ export function defaultSettings(isTouch) {
     minimap: true,
     autoRes: true,
     showFps: false,
+    keyHints: true,
     look: 'courier',
     skin: 2,
   };

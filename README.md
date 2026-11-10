@@ -40,6 +40,12 @@ python3 -m http.server 8000
 | Restart run / pause | R / Esc | Pause button |
 | Toggle minimap / invert seaplane pitch | M / I | Settings |
 | FPS readout | F3 | Settings |
+| Show / hide control hints | H | Settings |
+
+A hint strip at the bottom of the screen always shows the controls that matter right now: on foot,
+on a ladder, on a zipline, under the parachute, driving or flying. It switches to gamepad buttons or
+touch wording as soon as you use them. "How to play" on the start page opens by itself on your
+first visit.
 
 Gamepads work too: left stick runs (push all the way to sprint, or hold a trigger), right stick
 looks, A jumps, B slides, X grabs, Y drives or flies, the triggers set the seaplane throttle, and

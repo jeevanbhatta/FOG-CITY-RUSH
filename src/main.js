@@ -313,6 +313,7 @@ function applySettings() {
   sound.setVolume(S.volume);
   sky.setMode(S.timeOfDay);
   document.body.classList.toggle('no-minimap', !S.minimap);
+  document.body.classList.toggle('no-hints', !S.keyHints);
   for (const b of blobs) b.m.visible = !q.shadows;
   resize();
 }
@@ -331,6 +332,7 @@ function openSettings(from) {
   $('#set-minimap').checked = S.minimap;
   $('#set-autores').checked = S.autoRes;
   $('#set-fps').checked = S.showFps;
+  $('#set-hints').checked = S.keyHints;
   showScreen('#settings');
 }
 const bindSetting = (id, key, read) => $(id).addEventListener('input', (e) => {
@@ -348,6 +350,7 @@ bindSetting('#set-reduce', 'reduceMotion', (el) => el.checked);
 bindSetting('#set-minimap', 'minimap', (el) => el.checked);
 bindSetting('#set-autores', 'autoRes', (el) => el.checked);
 bindSetting('#set-fps', 'showFps', (el) => el.checked);
+bindSetting('#set-hints', 'keyHints', (el) => el.checked);
 
 // ---------- first-time tips ----------
 const seenTips = new Set(store.get('tips') || []);
@@ -658,6 +661,9 @@ function medalOf(c) {
 }
 let menuTab = store.get('tab') || 'all';
 
+// Open "How to play" on a first visit.
+if (!store.get('seenHelp')) { $('#fold-help').open = true; store.set('seenHelp', true); }
+
 function renderMenu() {
   // Big play button: carry on with the last run, or the first one without a gold medal.
   const lastId = store.get('last.' + D.id);
@@ -866,6 +872,11 @@ window.addEventListener('keydown', (e) => {
     saveSettings(S);
     applySettings();
   }
+  if (e.code === 'KeyH' && state !== 'menu' && !/INPUT|SELECT/.test(e.target.tagName)) {
+    S.keyHints = !S.keyHints;
+    saveSettings(S);
+    applySettings();
+  }
   if (e.code === 'KeyM') {
     S.minimap = !S.minimap;
     saveSettings(S);
@@ -898,6 +909,61 @@ function padMenus() {
     else if (state === 'results') $('#btn-retry').click();
   }
   if (input.hit('pad:slide') && (state === 'paused')) resume();
+}
+
+// ---------- control hints: the keys that matter right now, for keyboard, gamepad or touch ----------
+let keysHtml = '';
+function updateKeyHints() {
+  if (!S.keyHints) return;
+  const dev = input.device;
+  const K = (...k) => k.map((x) => `<kbd>${x}</kbd>`).join('');
+  // [keyboard, gamepad, touch] for each action.
+  const pick = (kb, pad, touch) => (dev === 'pad' ? pad : dev === 'touch' ? touch : kb);
+  const items = [];
+  const add = (keys, label) => { if (keys != null) items.push(`<span>${keys} ${label}</span>`); };
+  const hint = (text) => items.push(`<span class="hint">${text}</span>`);
+  const v = driving;
+  if (v && v.kind === 'plane') {
+    const climb = S.invertFlight ? 'S' : 'W', dive = S.invertFlight ? 'W' : 'S';
+    add(pick(K('Shift') + K('C'), K('RT') + K('LT'), null), 'Throttle');
+    add(pick(K(climb) + '/' + K(dive), K('L↕'), null), 'Climb / dive');
+    add(pick(K('A') + K('D'), K('L↔'), null), 'Bank');
+    add(pick(K('F'), K('Y'), null), v.state === 'air' ? 'Bail out' : 'Get out');
+    if (v.state === 'water') hint(pick('Full throttle, then hold W above 100 km/h to take off', 'Hold RT, then push up above 100 km/h to take off', 'Hold Power +, then push the stick up above 100 km/h to take off'));
+    if (dev === 'keys') add(K('I'), 'Swap W/S');
+  } else if (v) {
+    add(pick(K('W') + K('S'), K('L↕'), null), 'Drive');
+    add(pick(K('A') + K('D'), K('L↔'), null), 'Steer');
+    add(pick(K('Space'), K('A'), null), 'Drift');
+    if (!(active && active.vehicle)) add(pick(K('F'), K('Y'), null), 'Get out');
+    if (dev === 'touch') hint('Stick to drive and steer · Drift to slide · Exit to get out');
+  } else if (player.mode === 'chute') {
+    add(pick(K('A') + K('D'), K('L↔'), null), 'Turn');
+    add(pick(K('W'), K('L↑'), null), 'Dive');
+    add(pick(K('S'), K('L↓'), null), 'Flare to land soft');
+    add(pick(K('Space'), K('A'), null), 'Cut away');
+    if (dev === 'touch') hint('Stick: left/right turns, up dives, down flares · Jump cuts away');
+  } else if (player.mode === 'climb') {
+    add(pick(K('W') + K('S'), K('L↕'), null), 'Up / down');
+    add(pick(K('Space'), K('A'), null), 'Let go');
+    if (dev === 'touch') hint('Push the stick up to climb · Jump to let go');
+  } else if (player.mode === 'zip') {
+    add(pick(K('Space'), K('A'), 'Jump'), 'Let go and keep your speed');
+  } else {
+    add(pick(K('W') + K('A') + K('S') + K('D'), K('L'), null), 'Move');
+    add(pick(K('Mouse'), K('R'), null), 'Look');
+    add(pick(K('Shift'), K('RT'), null), 'Sprint');
+    add(pick(K('Space'), K('A'), null), 'Jump');
+    add(pick(K('C'), K('B'), null), 'Slide');
+    add(pick(K('E'), K('X'), null), 'Zipline');
+    if (dev === 'touch') hint('Left side moves (push all the way to sprint), right side looks');
+    if (player.prompt && /parachute/i.test(player.prompt)) hint(pick('Space again to open your parachute', 'A again to open your parachute', 'Jump again to open your parachute'));
+    else if (player.prompt && /fly|drive/.test(player.prompt)) hint(pick(player.prompt, player.prompt.replace('Press F', 'Press Y'), player.prompt.replace('Press F to', 'Tap')));
+  }
+  if (dev === 'keys') add(K('Esc'), 'Pause');
+  if (dev === 'keys') add(K('H'), 'Hide hints');
+  const html = items.join('');
+  if (html !== keysHtml) { keysHtml = html; $('#keys').innerHTML = html; }
 }
 
 // ---------- vehicles each frame ----------
@@ -1171,6 +1237,7 @@ function frame(now) {
       });
     }
     updateTips(realDt);
+    updateKeyHints();
   }
 
   // Speed lines when moving fast.

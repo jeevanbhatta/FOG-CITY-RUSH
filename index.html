@@ -114,6 +114,20 @@
   .fold-val { font: 800 1rem/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bay); }
   .fold > *:not(summary) { margin-top: 10px; }
 
+  /* Control hints: what the keys do right now */
+  #keys { position: absolute; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 14px; max-width: min(640px, calc(100vw - 760px));
+    background: rgba(31, 52, 64, 0.66); color: #eef2f3; border-radius: 4px; padding: 6px 11px 5px; font: 500 0.84rem/1.2 var(--body); }
+  #keys:empty, body.no-hints #keys { display: none; }
+  #keys span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  #keys kbd { min-width: 1.6em; padding: 3px 5px 2px; font-size: 0.72rem; }
+  #keys .hint { color: #ffb08a; white-space: normal; flex-basis: 100%; justify-content: center; order: -1; }
+  @media (max-width: 1180px) { #keys { max-width: calc(100vw - 32px); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); } }
+  body.touch #keys { bottom: calc(108px + env(safe-area-inset-bottom, 0px)); max-width: min(56vw, 360px); font-size: 0.8rem; }
+  @media (max-width: 640px) { body.touch #keys { left: max(16px, env(safe-area-inset-left, 0px)); transform: none; justify-content: flex-start;
+    bottom: calc(86px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 210px); }
+    body.touch #keys .hint { justify-content: flex-start; } }
+
   /* Style combo meter */
   #combo { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: 46%; transform: translateY(-50%); display: grid; justify-items: end; gap: 3px; text-align: right; }
   .cb-mult { font: 900 3.4rem/0.85 var(--display); color: var(--signal); text-shadow: 0 2px 12px rgba(255,255,255,0.7); font-variant-numeric: tabular-nums; }
@@ -329,7 +343,7 @@
       </div>
     </details>
 
-    <details class="block fold">
+    <details class="block fold" id="fold-help">
       <summary><span class="label">How to play</span></summary>
       <div class="controls" aria-label="Controls">
         <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Run</div>
@@ -346,6 +360,7 @@
         <div><kbd>R</kbd> Restart run</div>
         <div><kbd>Esc</kbd> Pause</div>
         <div><kbd>M</kbd> Minimap · <kbd>F3</kbd> FPS</div>
+        <div><kbd>H</kbd> Show or hide the control hints</div>
       </div>
       <p class="touch-note">Drag the left side to run (push all the way to sprint), drag the right side to look. Buttons: jump, slide, grab. Walk up to a car or the seaplane and tap Drive or Fly; in the plane, the buttons become throttle up and down.</p>
       <p class="fine">Gamepads work too. Best times, ghosts and postcards are saved on this device.</p>
@@ -381,6 +396,7 @@
       <label class="set-row" for="set-minimap">Show minimap <input type="checkbox" id="set-minimap"></label>
       <label class="set-row" for="set-autores">Auto resolution (keeps it smooth) <input type="checkbox" id="set-autores"></label>
       <label class="set-row" for="set-fps">Show FPS <input type="checkbox" id="set-fps"></label>
+      <label class="set-row" for="set-hints">Show control hints <input type="checkbox" id="set-hints"></label>
     </div>
     <div class="row"><button class="btn primary" id="btn-settings-done">Done</button></div>
   </div>
@@ -426,6 +442,7 @@
   <button id="btn-pause" aria-label="Pause">Pause</button>
   <canvas id="minimap" width="300" height="300" aria-hidden="true"></canvas>
   <div id="tip" hidden></div>
+  <div id="keys" aria-label="Controls"></div>
   <div id="toast"></div>
   <div id="prompt" hidden></div>
   <div id="countdown" hidden></div>
