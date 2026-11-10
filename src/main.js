@@ -18,6 +18,8 @@ import { placeParcels, Parcels } from './parcels.js';
 import { Details } from './details.js';
 import { DISTRICTS, pickDistrict } from './districts.js';
 import { Combo } from './combo.js';
+import { Friends } from './friends.js';
+import { FoodTruckGig, TourGuideGig, CAREER_ENTRIES } from './minigames.js';
 import { CityLife, CONTACTS, FOOD_NAMES, RENT } from './citylife.js';
 import { CAREERS, ARTIFACTS, SETS, rollArtifact, careerRank } from './careers.js';
 import { Weather } from './weather.js';
@@ -1414,8 +1416,15 @@ function groundAround(cx, cz, r) {
   return null;
 }
 const workRank = (id) => careerRank(life.s.work[id] || 0);
+for (const c of CAREER_ENTRIES) if (!CAREERS.some((k) => k.id === c.id)) CAREERS.push(c);
+const MINI = { foodtruck: FoodTruckGig, guide: TourGuideGig };
 
 function makeGig(id, from) {
+  if (MINI[id]) {
+    const m = MINI[id].start(ctx);
+    if (!m) return null;
+    return { title: id === 'foodtruck' ? 'Food truck service' : 'Walking tour', base: 0, mini: m, stages: [{ type: 'mini', label: m.label, ...m.target }] };
+  }
   const H = W.landmarks.hub, bi = W.landmarks.bridgeInfo;
   const t0 = bi.at(BRIDGE.towers[0], 0), t1 = bi.at(BRIDGE.towers[1], 0);
   if (id === 'courier') {
@@ -1546,6 +1555,8 @@ function startGig(id = career) {
   if (id === 'archaeologist') tip('dig', 'Archaeology: the detector beeps faster as you close in. Stand where it screams and hold E to dig.');
   if (id === 'photographer') tip('photo-gig', 'Photojournalism: get into position, press O for photo mode, frame the subject, Enter to shoot.');
   if (id === 'driver') tip('ride', 'Ride-share: you need a car (borrow one with F). Every crash costs a star.');
+  if (id === 'foodtruck') tip('foodtruck', 'Food truck: park where the beacon is, then stand at the window and press E to serve the customer at the front.');
+  if (id === 'guide') tip('guide', 'Tour guide: walk (no driving) to each stop and stay close while you talk. Don’t run off: lost tourists cost you.');
   if (id === 'inspector') tip('inspect', 'Inspector: climb to each point and hold E to inspect it.');
   if (id === 'pilot') tip('tour', 'Tour pilot: fly through each marker, then land gently by the dock. A crash ends the tour.');
 }
@@ -1567,6 +1578,7 @@ function toggleJob() {
 }
 function endJob(msg) {
   if (!job) return;
+  if (job.mini) job.mini.dispose(ctx);
   job = null;
   jobBeacon.visible = false;
   $('#job').hidden = true;
@@ -1578,7 +1590,7 @@ function finishGig(extra = 0, note = '') {
   let pay = job.base + extra;
   if (job.timeBonus && job.time > 0) pay += job.time * job.timeBonus;
   if (id === 'driver') pay = pay * (job.stars / 5) + (job.stars >= 5 ? 60 : 0);
-  pay = Math.round(pay * workRank(id).pay * (life.s.mood > 70 ? 1.15 : life.s.mood < 30 ? 0.85 : 1));
+  pay = Math.round(pay * friends.payMul(id) * workRank(id).pay * (life.s.mood > 70 ? 1.15 : life.s.mood < 30 ? 0.85 : 1));
   life.s.work[id] = (life.s.work[id] || 0) + 1;
   stats.jobs++;
   addCash(pay);
@@ -1604,6 +1616,19 @@ function gigEvent(ev, n = 1) {
 function holdE() { return input.down('KeyE', 'touch:grab', 'pad:grab'); }
 function jobTick(dt, focus) {
   if (!job) return;
+  if (job.mini) {
+    const m = job.mini;
+    const r = m.update(dt, ctx);
+    if (r && r.done) return finishGig(r.pay, r.note);
+    if (r && r.failed) { endJob(r.note); return; }
+    const t = m.target;
+    jobBeacon.position.set(t.x, t.y || 0, t.z);
+    jobBeacon.scale.set(1, 1, 1);
+    $('#job-text').textContent = m.label;
+    $('#job-time').textContent = m.info;
+    $('#job').classList.toggle('urgent', /falling behind|gave up|Get out|No driving/.test(m.info));
+    return;
+  }
   const st = job.stages[job.i];
   let info = '';
   const inCar = driving && driving.kind === 'car', inPlane = driving && driving.kind === 'plane';
@@ -2101,6 +2126,7 @@ let moduleTarget = null;
 const ctx = {
   THREE, scene, camera, W, BRIDGE, D, V, player, life, sound, hud, particles, store, Avatar, LOOKS,
   getDriving: () => driving,
+  playerName: S.name || '',
   addCash: (n) => addCash(n),
   setPrompt: (t) => { lifePrompt = t; },
   holdE: () => holdE(),
@@ -2110,6 +2136,7 @@ const ctx = {
 };
 function moduleEvent(name, data) { for (const m of modules) if (m.onEvent) m.onEvent(name, data); }
 function addModule(m) { if (m) modules.push(m); return m; }
+const friends = addModule(new Friends(ctx));
 
 // --- the per-frame life tick (free roam only) ---
 let lifeSaveT = 0, placeT = 0;
@@ -2121,7 +2148,7 @@ function lifeTick(dt, realDt) {
   const effort = !driving && (player.mode === 'climb' ? 0.8 : player.onGround && player.speed > 10 ? 1 : 0);
   life.tick(realDt, effort);
   if (state !== 'play') return; // passing out ends the day
-  player.energyMul = life.speedMul;
+  player.energyMul = life.speedMul * (1 + friends.perks.sprintBonus);
   if (driving && driving.kind === 'car' && radioStation) life.mood(realDt * 0.02);
   // HUD.
   const s = life.s;
@@ -2144,7 +2171,7 @@ function lifeTick(dt, realDt) {
     if (V.dock && Math.hypot(focus.x - V.dock.shore.x, focus.z - V.dock.shore.z) < 18) life.storyEvent({ goto: 'dock' });
     if (Math.hypot(focus.x - home.x, focus.z - home.z) < 5) life.storyEvent({ goto: 'home' });
   }
-  if (!driving) {
+  if (!driving && !(job && job.mini && job.mini.wantsE)) {
     const t = nearFood(player.pos);
     if (t) {
       lifePrompt = `Press E to eat at ${t.name} ($${t.price})`;
