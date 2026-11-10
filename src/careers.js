@@ -21,6 +21,8 @@ export const CAREERS = [
   { id: 'driver', name: 'Ride-share driver', blurb: 'Collect passengers and drive them across town. Smooth driving earns stars and tips.', color: '#2f6f8f' },
   { id: 'pilot', name: 'Tour pilot', blurb: 'Fly sightseers over the landmarks in the seaplane and land them gently.', color: '#2aa198' },
   { id: 'inspector', name: 'Bridge & tower inspector', blurb: 'Climb to inspection points on the bridge and rooftops and check them over.', color: '#d1495b' },
+  { id: 'patrol', name: 'Harbour patrol', blurb: 'Someone is in the water. Fly out, land beside them and bring them back to the dock.', color: '#ff8c42' },
+  { id: 'stunt', name: 'Film stunt performer', blurb: 'The crew is rolling. Pull off the stunts on the call sheet before the light goes.', color: '#e84393' },
 ];
 
 // Things you can dig up. Weighted by rarity; values in dollars.
@@ -35,6 +37,13 @@ export const ARTIFACTS = [
   { id: 'coin', name: 'Gold Rush coin', era: '1852', value: 400, w: 3 },
   { id: 'bell', name: "Buried ship's bell", era: 'Gold Rush ship hull, 1849', value: 650, w: 2 },
   { id: 'nugget', name: 'Gold nugget', era: '1849', value: 900, w: 1 },
+];
+
+// Museum sets: donate every piece in a set for a reward.
+export const SETS = [
+  { id: 'goldrush', name: 'Gold Rush', items: ['nail', 'coin', 'bell', 'nugget'], reward: 2500 },
+  { id: 'oldcity', name: 'The old city', items: ['bottle', 'pipe', 'brick', 'token'], reward: 1200 },
+  { id: 'waterfront', name: 'Waterfront', items: ['button', 'ticket'], reward: 900 },
 ];
 
 export function rollArtifact(rnd = Math.random) {

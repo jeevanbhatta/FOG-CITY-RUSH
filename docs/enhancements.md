@@ -2,6 +2,17 @@
 
 A running list of what has been added, newest batch first, and what's queued next.
 
+## Batch 6: more ways to live
+
+1. **Museum**: donate finds at the landmark plaza (E). Complete a set for a reward: Gold Rush (ship nail,
+   coin, ship's bell, nugget) $2,500; The old city (bottle, pipe, brick, token) $1,200; Waterfront
+   (crew button, Expo ticket) $900. Or sell finds to a dealer from the phone for half their value.
+2. **Harbour patrol** career: fly out, land slowly beside a swimmer bobbing in a life ring, bring them back to the dock.
+3. **Film stunt performer** career: a call sheet of three stunts (wall-runs, wall-jumps, long jumps,
+   rolled drops, combos, zipline jumps, car stunt jumps, parachutes) before the light goes.
+4. **Rooftop parties**: most nights from 21:00 a party lights up a rooftop with searchlights; Theo texts
+   you. Climb up for a big mood boost and music.
+
 ## Batch 5: City Life (a life, not just a race)
 
 Free roam is now **City Life**: a day-to-day life in the district that carries on between sessions.
@@ -83,10 +94,9 @@ GitHub Pages hosting with offline install.
 ## Queued next
 
 - **More story**: longer chapters per contact, a second set of contacts per district, small cutscenes with the camera.
-- **Archaeology museum**: donate finds to a museum wing at the landmark; complete sets for big rewards.
 - **Buy and furnish**: upgrade from the apartment to a bigger place with a view; buy your own car and boat.
 - **Relationships**: hang out with friends (races, photo walks, dinner at a food truck) to unlock their perks.
-- **Night life**: events that only happen at night (street races, rooftop parties, night photography).
+- **Night life**: more night-only events (street races, night markets).
 - **Weekly events**: Fleet Week air show (fly through the formation), a marathon, a regatta.
-- **More careers**: harbour patrol (rescue swimmers with the seaplane), film stunt performer, food-truck owner.
+- **More careers**: food-truck owner, tour guide on foot, window cleaner on the towers.
 - **Hunger and energy on vehicles**: fuel for the car and seaplane, charging, and gas stations.

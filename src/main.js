@@ -19,7 +19,7 @@ import { Details } from './details.js';
 import { DISTRICTS, pickDistrict } from './districts.js';
 import { Combo } from './combo.js';
 import { CityLife, CONTACTS, FOOD_NAMES, RENT } from './citylife.js';
-import { CAREERS, ARTIFACTS, rollArtifact, careerRank } from './careers.js';
+import { CAREERS, ARTIFACTS, SETS, rollArtifact, careerRank } from './careers.js';
 import { Weather } from './weather.js';
 import { Achievements, ACHIEVEMENTS } from './achievements.js';
 import { Pedestrians } from './pedestrians.js';
@@ -255,6 +255,7 @@ function updateCombo(dt) {
   if (notice) {
     if (notice.n && notice.n > comboMovesBest) { comboMovesBest = notice.n; store.set('combo.moves', comboMovesBest); }
     if (notice.n >= 5 && !active) { life.event('combo5'); life.mood(2); }
+    if (notice.n >= 4) gigEvent('combo');
     hud.toast(notice.text, 1300);
     if (!notice.lost) { sound.chime(); if (combo.best > (store.get('combo.best') || 0)) store.set('combo.best', combo.best); }
   }
@@ -1113,6 +1114,7 @@ function stepVehicle(dt, frozen) {
     for (const e of v.events) {
       if (e.startsWith('crash:')) {
         if (job && job.career === 'pilot') endJob('The tour ended badly. Gig failed');
+        if (job && job.career === 'patrol') endJob('Crashed on the way. The coastguard took over');
         hud.toast(e.slice(6), 1600);
         particles.debris(v.pos.x, v.pos.y + 2, v.pos.z);
         if (v.pos.y < 2) particles.splash(v.pos.x, -1.6, v.pos.z, 2);
@@ -1166,6 +1168,7 @@ function footEffects(dt) {
   }
   for (const e of p.events) {
     if (e === 'Wall jump' || e === 'Long jump') sound.jump();
+    gigEvent(e);
     if (e === 'Slide') sound.whoosh();
     if (e === 'Roll') particles.dust(p.pos.x, p.pos.y, p.pos.z, 1);
     if (e === 'Parachute') { sound.whoosh(); rig.shake(0.3); tip('chute', isTouch ? 'Stick left/right to turn, up to dive, down to flare. Jump again to cut away.' : 'A/D to turn, W to dive, S to flare. Jump again to cut away.'); }
@@ -1335,6 +1338,7 @@ function carTricks(dt) {
       stats.stunts++;
       addCash(pay);
       if (!active) { life.event('stunt'); life.mood(3); }
+      gigEvent('stunt');
       hud.toast(`Stunt jump · ${air.t.toFixed(1)} s · ${Math.round(dist)} m  +$${pay}`, 1800);
     }
     air.t = 0; air.slow = false;
@@ -1464,6 +1468,39 @@ function makeGig(id, from) {
       { type: 'goto', x: dock.pos.x, y: dock.pos.y, z: dock.pos.z, reach: 80, need: 'plane', water: true, label: 'Land them back at the dock' },
     ] };
   }
+  if (id === 'patrol') {
+    if (!V.plane || !V.dock) return null;
+    const dock = V.dock;
+    const [dx, dz] = D.dockDir || [-H.face[0], -H.face[1]];
+    let spot = null;
+    for (let i = 0; i < 40 && !spot; i++) {
+      const a = Math.atan2(dz, dx) + (Math.random() - 0.5) * 1.6, d = 350 + Math.random() * 600;
+      const x = dock.pos.x + Math.cos(a) * d, z = dock.pos.z + Math.sin(a) * d;
+      let ok = true;
+      for (const [ox, oz] of [[0, 0], [30, 0], [-30, 0], [0, 30], [0, -30]]) if (W.world.floorAt(x + ox, z + oz, 5, 0).solid || W.world.pointBlocked(x + ox, 2, z + oz)) ok = false;
+      if (ok) spot = { x, z };
+    }
+    if (!spot) return null;
+    return { title: 'Rescue', base: 500, swimmer: spot, stages: [
+      { type: 'goto', x: dock.pos.x, y: dock.pos.y, z: dock.pos.z, reach: 30, need: 'plane', label: 'Get to the seaplane' },
+      { type: 'goto', x: spot.x, y: -1.4, z: spot.z, reach: 28, need: 'plane', water: true, slow: true, timed: 150, label: 'Land on the water beside the swimmer' },
+      { type: 'goto', x: dock.pos.x, y: dock.pos.y, z: dock.pos.z, reach: 70, need: 'plane', water: true, label: 'Bring them back to the dock' },
+    ] };
+  }
+  if (id === 'stunt') {
+    const calls = [
+      { ev: 'Wall run', count: 2, label: 'Two wall-runs for the camera' },
+      { ev: 'Wall jump', count: 3, label: 'Three wall-jumps' },
+      { ev: 'Long jump', count: 2, label: 'Two slide long-jumps' },
+      { ev: 'Roll', count: 1, label: 'A big drop, rolled out clean' },
+      { ev: 'combo', count: 4, label: 'A four-move combo' },
+      { ev: 'Zip jump', count: 1, label: 'Let go of a zipline mid-ride' },
+      { ev: 'stunt', count: 1, label: 'A car stunt jump' },
+      { ev: 'Parachute', count: 1, label: 'Open a parachute in the air' },
+    ];
+    const pick = calls.sort(() => Math.random() - 0.5).slice(0, 3);
+    return { title: 'Film shoot', base: 450, stages: pick.map((c) => ({ type: 'event', ev: c.ev, count: c.count, have: 0, timed: 150, label: c.label, x: from.x, y: from.y, z: from.z })) };
+  }
   if (id === 'inspector') {
     const pts = [
       { x: t0[0], y: bi.towerTop, z: t0[1], label: `The top of the ${D.bridgeName} tower` },
@@ -1549,6 +1586,15 @@ function finishGig(extra = 0, note = '') {
   endJob(`${note}${note ? ' · ' : ''}Paid $${pay}${after !== before ? ` · Promoted to ${after}!` : ''}  ·  J for another`);
   saveLife();
 }
+// Feed in-world moments to a stunt-performer gig.
+function gigEvent(ev, n = 1) {
+  if (!job) return;
+  const st = job.stages[job.i];
+  if (st.type !== 'event' || st.ev !== ev) return;
+  st.have += n;
+  sound.click();
+  if (st.have >= st.count) { st.have = 0; advanceStage(); }
+}
 function holdE() { return input.down('KeyE', 'touch:grab', 'pad:grab'); }
 function jobTick(dt, focus) {
   if (!job) return;
@@ -1567,7 +1613,7 @@ function jobTick(dt, focus) {
   } else if (st.type === 'goto') {
     const dy = Math.abs(focus.y - st.y);
     const vertical = st.air ? st.reach : Math.max(4, st.reach * 0.6);
-    const watered = !st.water || (inPlane && driving.state === 'water');
+    const watered = (!st.water || (inPlane && driving.state === 'water')) && (!st.slow || (inPlane && Math.abs(driving.speed) < 9));
     if (d < st.reach && dy < vertical && watered && (!st.need || !need)) return advanceStage();
     info = `${Math.round(d)} m`;
   } else if (st.type === 'search') {
@@ -1606,6 +1652,9 @@ function jobTick(dt, focus) {
     } else info = `${Math.round(Math.hypot(d, dy))} m · ${Math.round(st.y)} m up`;
   } else if (st.type === 'photo') {
     info = 'O for photo mode, Enter to shoot';
+  } else if (st.type === 'event') {
+    info = `${st.have} / ${st.count} · cameras rolling`;
+    jobBeacon.position.set(focus.x, focus.y, focus.z);
   }
   $('#job-text').textContent = `${job.i + 1}/${job.stages.length} · ${st.label}`;
   $('#job-time').textContent = info + (job.time != null ? ` · ${Math.ceil(job.time)} s` : '') + (job.career === 'driver' && job.i > 0 ? ` · ${'★'.repeat(Math.max(1, Math.round(job.stars)))}` : '');
@@ -1632,6 +1681,18 @@ function judgePhoto() {
     finishGig(Math.round(centred * 150), centred > 0.7 ? 'Front page shot' : 'Good shot');
   } else hud.toast(framed ? `Not quite: ${st.brief.text}` : 'The subject isn’t in the frame', 1800);
 }
+
+const swimmer = (() => {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.2, 8, 20), new THREE.MeshStandardMaterial({ color: 0xff6a2b, emissive: 0xff6a2b, emissiveIntensity: 0.6 }));
+  ring.rotation.x = Math.PI / 2; ring.position.y = 0.15;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshStandardMaterial({ color: 0xc58c66 }));
+  head.position.y = 0.45;
+  g.add(ring, head);
+  g.visible = false;
+  scene.add(g);
+  return g;
+})();
 
 // --- home and food trucks ---
 const home = (() => {
@@ -1703,6 +1764,34 @@ const foodTrucks = (() => {
   }
   return out;
 })();
+const museum = { donated: new Set(store.get('museum') || []), sets: new Set(store.get('museum.sets') || []) };
+function donateAll() {
+  let n = 0;
+  for (let i = finds.length - 1; i >= 0; i--) {
+    if (!museum.donated.has(finds[i].id)) { museum.donated.add(finds[i].id); finds.splice(i, 1); n++; }
+  }
+  store.set('finds', finds);
+  store.set('museum', [...museum.donated]);
+  if (!n) { hud.toast('Nothing new for the museum. Keep digging.', 1400); return; }
+  life.mood(6);
+  hud.toast(`Donated ${n} find${n > 1 ? 's' : ''} to the museum`, 1500);
+  for (const S2 of SETS) {
+    if (museum.sets.has(S2.id) || !S2.items.every((id) => museum.donated.has(id))) continue;
+    museum.sets.add(S2.id);
+    store.set('museum.sets', [...museum.sets]);
+    addCash(S2.reward);
+    sound.finish();
+    hud.toast(`Museum set complete: ${S2.name}  +$${S2.reward}`, 2600);
+  }
+}
+function sellFinds() {
+  if (!finds.length) return;
+  const total = finds.reduce((a, f) => a + Math.round(((ARTIFACTS.find((x) => x.id === f.id) || {}).value || 0) * 0.5), 0);
+  finds.length = 0;
+  store.set('finds', finds);
+  addCash(total);
+  hud.toast(`Sold your finds to a dealer  +$${total}`, 1500);
+}
 function nearFood(p) { return foodTrucks.find((t) => Math.hypot(p.x - t.x, p.z - t.z) < 3.4 || Math.hypot(p.x - t.tx, p.z - t.tz) < 3.6); }
 
 // --- phone (P) ---
@@ -1756,13 +1845,18 @@ function renderPhone() {
     return `<li><span class="who" style="color:${a.contact.color}">${a.contact.name} · ${a.chapter.title}</span><span>${st.text}${st.count > 1 ? ` (${a.prog} / ${st.count})` : ''}</span>${btn}</li>`;
   }).join('') || '<li class="meta">No missions right now. New messages arrive in the morning.</li>';
   $('#ph-story').innerHTML = story + `<li class="meta" style="margin-top:6px">WORK</li>` + work
-    + (finds.length ? `<li><span class="who">Your finds</span><span class="meta">${finds.slice(0, 8).map((f) => (ARTIFACTS.find((a) => a.id === f.id) || {}).name).join(' · ')}${finds.length > 8 ? ` and ${finds.length - 8} more` : ''}</span></li>` : '');
+    + `<li><span class="who">Archaeology</span>
+        <span class="meta">${finds.length ? `Carrying: ${finds.slice(0, 6).map((f) => (ARTIFACTS.find((a) => a.id === f.id) || {}).name).join(' · ')}${finds.length > 6 ? ` and ${finds.length - 6} more` : ''}` : 'Nothing in your bag.'}</span>
+        ${SETS.map((S2) => `<span class="meta">${museum.sets.has(S2.id) ? '✓' : '·'} ${S2.name}: ${S2.items.filter((id) => museum.donated.has(id)).length} / ${S2.items.length} in the museum · $${S2.reward}</span>`).join('')}
+        <span class="meta">Donate at the plaza by the landmark, or sell for half value.</span>
+        ${finds.length ? '<button class="btn ghost" data-sell="1">Sell to a dealer</button>' : ''}</li>`;
   $('#ph-inbox').innerHTML = s.inbox.slice(0, 12).map((m) => {
     const c = CONTACTS.find((k) => k.id === m.from);
     return `<li class="${m.unread ? 'unread' : ''}"><span class="who" style="color:${c ? c.color : '#1f3440'}">${c ? c.name : m.from}</span><span>${m.text}</span><span class="meta">Day ${m.day} · ${m.clock}</span></li>`;
   }).join('') || '<li class="meta">No messages yet.</li>';
   const P = $('#phone');
   P.querySelectorAll('[data-gig]').forEach((b) => b.addEventListener('click', () => { togglePhone(false); startGig(b.dataset.gig); }));
+  P.querySelectorAll('[data-sell]').forEach((b) => b.addEventListener('click', () => { sellFinds(); renderPhone(); }));
   P.querySelectorAll('[data-quit]').forEach((b) => b.addEventListener('click', () => { endJob('Gig cancelled'); renderPhone(); }));
   P.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => {
     const p = placePoint(b.dataset.goto);
@@ -1833,6 +1927,50 @@ life.on((type, data) => {
   saveLife();
 });
 
+// --- night life: a rooftop party somewhere most nights ---
+const party = (() => {
+  const g = new THREE.Group();
+  const cols = [0xff4fa3, 0x4fd1ff, 0xffd34d, 0x7cff6b];
+  for (let i = 0; i < 4; i++) {
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 2.5, 60, 10, 1, true).translate(0, 30, 0),
+      new THREE.MeshBasicMaterial({ color: cols[i], transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    beam.userData.k = i;
+    g.add(beam);
+  }
+  g.visible = false;
+  scene.add(g);
+  return { g, spot: null, day: 0, joined: 0 };
+})();
+function partyTick(dt, focus) {
+  const h = (life.s.minute % 1440) / 60;
+  const on = (h >= 21 || h < 1) && life.s.day % 3 !== 0; // most nights, not every night
+  if (on && party.day !== life.s.day) {
+    party.day = life.s.day;
+    const roofs = W.world.ladders.filter((L) => L.y1 > 18 && L.y1 < 70);
+    const L = roofs[Math.floor(Math.random() * roofs.length)];
+    party.spot = L ? { x: L.x - L.nx * 3, y: L.y1, z: L.z - L.nz * 3 } : null;
+    if (party.spot) {
+      hud.toast('Theo: rooftop party tonight. Look for the lights.', 2400);
+      $('#phone-badge').hidden = false;
+      life.s.inbox.unshift({ from: 'theo', title: 'Party', text: 'Rooftop party tonight, find the lights in the sky. Bring your best moves.', day: life.s.day, clock: life.clock, unread: true });
+    }
+  }
+  party.g.visible = on && !!party.spot;
+  if (!party.g.visible) return;
+  party.g.position.set(party.spot.x, party.spot.y, party.spot.z);
+  party.g.children.forEach((b, i) => { b.rotation.z = Math.sin(elapsed * 0.8 + i * 1.6) * 0.35; b.rotation.x = Math.cos(elapsed * 0.6 + i) * 0.35; });
+  if (party.joined !== life.s.day && Math.hypot(focus.x - party.spot.x, focus.z - party.spot.z) < 8 && Math.abs(focus.y - party.spot.y) < 3) {
+    party.joined = life.s.day;
+    life.mood(25);
+    life.s.energy = Math.max(0, life.s.energy - 10);
+    if (radioStation === 0) radioStation = 2;
+    sound.setRadio(2);
+    setTimeout(() => { if (!driving) sound.setRadio(0); }, 20000);
+    hud.toast('You made the party. Mood way up.', 2000);
+    life.event('party');
+  }
+}
+
 // --- the per-frame life tick (free roam only) ---
 let lifeSaveT = 0, placeT = 0;
 function lifeTick(dt, realDt) {
@@ -1874,6 +2012,9 @@ function lifeTick(dt, realDt) {
         if (cash < t.price) hud.toast('Not enough cash. Take a gig (J).', 1400);
         else { addCash(-t.price); life.eat(t.fill); sound.pickup(); hud.toast(`${t.name}: delicious`, 1200); saveLife(); }
       }
+    } else if (finds.length && Math.hypot(player.pos.x - W.landmarks.hub.plaza[0], player.pos.z - W.landmarks.hub.plaza[1]) < 6) {
+      lifePrompt = `Press E to donate ${finds.length} find${finds.length > 1 ? 's' : ''} to the museum`;
+      if (input.grabHit) donateAll();
     } else if (Math.hypot(player.pos.x - home.x, player.pos.z - home.z) < 3 && Math.abs(player.pos.y - home.y) < 2) {
       const late = h >= 18 || h < 5 || s.energy < 35;
       lifePrompt = late ? 'Press E to go to bed (ends the day)' : 'Press E to nap for two hours';
@@ -1883,6 +2024,7 @@ function lifeTick(dt, realDt) {
       }
     }
   }
+  partyTick(dt, focus);
   lifeSaveT -= realDt;
   if (lifeSaveT <= 0) { lifeSaveT = 5; saveLife(); store.set('lifePos', [player.pos.x, player.pos.y, player.pos.z]); }
 }
@@ -2225,6 +2367,9 @@ $('#bigmap canvas').addEventListener('contextmenu', (e) => {
 let achT = 0;
 function worldExtras(dt, realDt) {
   const focus = driving ? driving.pos : player.pos;
+  // The swimmer for a harbour-patrol rescue: a bobbing head and an orange ring.
+  swimmer.visible = !!(job && job.career === 'patrol' && job.i <= 1);
+  if (swimmer.visible) swimmer.position.set(job.swimmer.x, -1.5 + Math.sin(elapsed * 2) * 0.12, job.swimmer.z);
   for (const ev of ferries.update(dt)) {
     const d = Math.hypot(ev.x - focus.x, ev.z - focus.z);
     if (d < 900 && state === 'play') sound.shipHorn(Math.min(1, d / 900));
