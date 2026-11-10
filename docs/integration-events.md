@@ -74,9 +74,8 @@ It lights `#phone-badge` itself (via `document.getElementById`) when it adds an 
    - near the arch while the run is open: `Fun run: Walk through the start arch to join`
    - in the seaplane during the show: `Air show: Ring n / 8 · fly through in order`
 
-7. **Events**: nothing to add if the existing sleep hook already calls `moduleEvent('sleep')`. On
-   `'sleep'`, `onEvent` calls off a run in progress and clears its pointer. If no sleep hook exists yet,
-   call `moduleEvent('sleep')` in `endDay()`.
+7. **Events**: nothing to add. `endDay()` already calls `moduleEvent('sleep', { passedOut })`. On
+   `'sleep'`, `onEvent` calls off a run in progress and clears its pointer.
 
 ## Pointer (`setTarget`)
 
@@ -96,6 +95,7 @@ still takes priority.
   `['airshow', 'Fly the Fleet Week rings', 'airshow', 1]` and
   `['funrun', 'Finish the Sunday fun run', 'funrun', 1]`. Today those goals would come up on days
   without the event, so filtering by weekday would be needed first.
-- **Testing**: to try the events without waiting for the day, set `life.s.minute` from the console.
-  `life.s.minute = (life.s.day - 1) * 1440 + 11 * 60 + 55` jumps to just before the air show; the
-  `day % 7` rule must also match.
+- **Testing**: `life` is not exposed globally. To try the events without waiting, temporarily add
+  `window.life = life;` in `main.js`, then set the clock and day from the console, for example:
+  `life.s.day = 6; life.s.minute = 5 * 1440 + 11 * 60 + 55` for just before the Saturday air show.
+  Keep the rule `minute = (day - 1) * 1440 + minute-of-day`.

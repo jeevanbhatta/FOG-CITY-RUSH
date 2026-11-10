@@ -19,6 +19,7 @@ import { Details } from './details.js';
 import { DISTRICTS, pickDistrict } from './districts.js';
 import { Combo } from './combo.js';
 import { Friends } from './friends.js';
+import { CityEvents } from './events.js';
 import { FoodTruckGig, TourGuideGig, CAREER_ENTRIES } from './minigames.js';
 import { CityLife, CONTACTS, FOOD_NAMES, RENT } from './citylife.js';
 import { CAREERS, ARTIFACTS, SETS, rollArtifact, careerRank } from './careers.js';
@@ -2137,6 +2138,7 @@ const ctx = {
 function moduleEvent(name, data) { for (const m of modules) if (m.onEvent) m.onEvent(name, data); }
 function addModule(m) { if (m) modules.push(m); return m; }
 const friends = addModule(new Friends(ctx));
+const cityEvents = addModule(new CityEvents(ctx));
 
 // --- the per-frame life tick (free roam only) ---
 let lifeSaveT = 0, placeT = 0;
@@ -2851,5 +2853,5 @@ if (/\.github\.io$/.test(location.hostname)) {
 // Handy for testing from the console.
 window.__fcr = { sun,
   W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene, V,
-  get countdown() { return countdown; }, life, startGig, togglePhone, home, foodTrucks, endDay, weather, ferries, streetcars, ach, traps, togglePhoto, get job() { return job; }, toggleJob, toggleMap, borrowCar, peds, bigmap, addCash, get cash() { return cash; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
+  get countdown() { return countdown; }, cityEvents, life, startGig, togglePhone, home, foodTrucks, endDay, weather, ferries, streetcars, ach, traps, togglePhoto, get job() { return job; }, toggleJob, toggleMap, borrowCar, peds, bigmap, addCash, get cash() { return cash; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
 };

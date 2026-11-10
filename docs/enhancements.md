@@ -2,6 +2,26 @@
 
 A running list of what has been added, newest batch first, and what's queued next.
 
+## Batch 7: people, events and property
+
+Built in parallel by three subagents, each writing a self-contained module against
+`docs/module-contract.md`, then integrated through the module host in `src/main.js`.
+
+1. **Friends** (`src/friends.js`): affinity with Rosa, Theo and Captain Mei, raised by their story chapters
+   and by hangouts. Hang out from the phone: race Theo across the district, eat at a food truck with Rosa,
+   watch the sunset on the plaza with Mei. Your friend walks beside you as a character. Perks at 50 and 100:
+   faster sprint (Theo), better courier pay (Rosa), double pay on pilot and patrol gigs (Mei). Friends text you.
+2. **Weekly events** (`src/events.js`): a Fleet Week air show every seventh day (fly the seaplane through
+   eight rings over the bay while jets loop overhead, $1,500), a Sunday fun run against 25 runners
+   ($300 plus $50 per runner beaten), and a sailboat regatta every afternoon.
+3. **Two careers with their own minigames** (`src/minigames.js`):
+   - **Food-truck owner**: park your truck, then serve a queue of customers before their patience runs out.
+   - **Walking tour guide**: lead six tourists to three stops; go too fast and they fall behind and get lost.
+4. **Property**: buy a waterfront loft ($8,000) or a penthouse on the tallest building ($25,000, wake up on the roof).
+   Better homes lift your mood every night.
+5. **Your own car** ($3,000, choose a colour): parked by your door every morning.
+6. **Start a new life** in Settings; the menu's City life button shows the day you're on.
+
 ## Batch 6: more ways to live
 
 1. **Museum**: donate finds at the landmark plaza (E). Complete a set for a reward: Gold Rush (ship nail,
@@ -94,9 +114,7 @@ GitHub Pages hosting with offline install.
 ## Queued next
 
 - **More story**: longer chapters per contact, a second set of contacts per district, small cutscenes with the camera.
-- **Buy and furnish**: upgrade from the apartment to a bigger place with a view; buy your own car and boat.
-- **Relationships**: hang out with friends (races, photo walks, dinner at a food truck) to unlock their perks.
+- **Furnishing**: decorate your home; a boat of your own.
 - **Night life**: more night-only events (street races, night markets).
-- **Weekly events**: Fleet Week air show (fly through the formation), a marathon, a regatta.
-- **More careers**: food-truck owner, tour guide on foot, window cleaner on the towers.
+- **More careers**: window cleaner on the towers, bike messenger, lifeguard.
 - **Hunger and energy on vehicles**: fuel for the car and seaplane, charging, and gas stations.
