@@ -38,8 +38,8 @@ export class Hud {
     if (best != null) parts.push(`Best ${fmtTime(best)}`);
     if (target) parts.push(`${target.name} ${fmtTime(target.time)}`);
     this.el.best.textContent = parts.join(' · ');
-    this.el.time.hidden = name === 'Free roam';
-    this.el.cp.hidden = name === 'Free roam';
+    this.el.time.hidden = name === 'Free roam' || name === 'City life';
+    this.el.cp.hidden = name === 'Free roam' || name === 'City life';
   }
 
   setRival(name, time) {

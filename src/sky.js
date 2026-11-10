@@ -46,6 +46,7 @@ export class Sky {
     scene.add(this.dome);
     this.sunOffset = new THREE.Vector3();
     this.lights = 0;
+    this.night = 0;
     this.fogBase = 1150;
     this.state = {};
     this.apply(0);
@@ -69,7 +70,8 @@ export class Sky {
 
   apply(dt, elapsed = 0) {
     if (this.mode === 'cycle') this.u = (this.u + dt / CYCLE_SECONDS) % 1;
-    else this.u = FIXED[this.mode];
+    else if (this.mode !== 'clock') this.u = FIXED[this.mode]; // 'clock': u and night are set from outside
+    if (this.mode !== 'clock') this.night = 0;
     const s = this.sample(this.u);
     const az = 2.3;
     const el = s.elev;
@@ -91,6 +93,20 @@ export class Sky {
     this.scene.fog.near = 40 + 60 * roll;
     this.renderer.toneMappingExposure = s.exposure;
     this.lights = s.lights;
+    // Night (City Life's clock): dark blue sky, dim moonlight, every window lit.
+    const n = this.night || 0;
+    if (n > 0) {
+      const navy = new THREE.Color('#0d1724'), deep = new THREE.Color('#05090f');
+      this.uniforms.horizon.value.lerp(navy, n * 0.85);
+      this.uniforms.zenith.value.lerp(deep, n * 0.9);
+      this.scene.fog.color.lerp(navy, n * 0.85);
+      this.sun.color.lerp(new THREE.Color('#9fb4ff'), n);
+      this.sun.intensity *= 1 - n * 0.8;
+      this.hemi.intensity *= 1 - n * 0.55;
+      this.hemi.color.lerp(new THREE.Color('#5a6f99'), n * 0.7);
+      this.renderer.toneMappingExposure = s.exposure * (1 - n * 0.25);
+      this.lights = Math.max(this.lights, n);
+    }
   }
 
   follow(camera) {

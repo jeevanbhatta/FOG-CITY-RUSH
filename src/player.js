@@ -126,8 +126,8 @@ export class Player {
     const v = this.vel;
 
     // --- Horizontal control ---
-    const top = T.sprint * (1 + 0.18 * this.flow);
-    let target = wishLen * (sprint ? top : T.run);
+    const top = T.sprint * (1 + 0.18 * this.flow) * (this.energyMul || 1);
+    let target = wishLen * (sprint ? top : T.run * (this.energyMul || 1));
     if (this.stumble > 0) target *= 0.45;
     const tvx = wishLen > 0 ? (wx / wishLen) * target : 0;
     const tvz = wishLen > 0 ? (wz / wishLen) * target : 0;

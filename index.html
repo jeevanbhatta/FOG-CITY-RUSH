@@ -166,6 +166,38 @@
     border: 0; background: rgba(255,255,255,0.6); border-radius: 3px; padding: 8px 12px 7px; font: 800 0.95rem/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; }
   @media (max-width: 640px) { #cash { top: calc(232px + env(safe-area-inset-top, 0px)); font-size: 1.3rem; } #area { bottom: calc(300px + env(safe-area-inset-bottom, 0px)); } #area b { font-size: 1.3rem; } #job { top: calc(150px + env(safe-area-inset-top, 0px)); } }
 
+  /* City Life HUD, phone and day summary */
+  #life { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: calc(70px + env(safe-area-inset-top, 0px));
+    background: rgba(236, 241, 242, 0.78); border-radius: 4px; padding: 7px 10px; display: grid; gap: 4px; min-width: 150px; }
+  .life-clock { display: flex; align-items: baseline; gap: 8px; }
+  .life-clock b { font: 900 1.5rem/1 var(--display); font-variant-numeric: tabular-nums; color: var(--bay); }
+  .life-clock span { font: 600 0.78rem/1 var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--steel); }
+  .need { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 6px; font: 600 0.7rem/1 var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--steel); }
+  .bar { display: block; height: 6px; border-radius: 3px; background: rgba(31,52,64,0.18); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: #4f9a6a; transition: width 0.4s; }
+  .bar i.low { background: #d1495b; } .bar i.mid { background: #e0a030; }
+  .life-note { font-size: 0.78rem; color: #b5432a; max-width: 190px; }
+  .life-note:empty { display: none; }
+  #btn-phone { pointer-events: auto; position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: calc(max(16px, env(safe-area-inset-right, 0px)) + 150px);
+    border: 0; background: rgba(255,255,255,0.6); border-radius: 3px; padding: 8px 12px 7px; font: 800 0.95rem/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; position: absolute; }
+  #phone-badge { position: absolute; top: -4px; right: -4px; width: 12px; height: 12px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 2px #fff; }
+  #phone { position: fixed; right: max(12px, env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    width: min(370px, calc(100vw - 24px)); z-index: 13; background: #f4f6f6; border-radius: 18px; box-shadow: 0 20px 60px rgba(14,26,33,0.45), inset 0 0 0 6px #1f3440;
+    padding: 18px 18px 14px; overflow-y: auto; display: grid; align-content: start; gap: 14px; touch-action: pan-y; animation: rise 0.25s ease-out; }
+  .ph-head { display: flex; align-items: baseline; gap: 10px; }
+  .ph-head b { font: 900 2rem/1 var(--display); font-variant-numeric: tabular-nums; }
+  .ph-head span { color: var(--steel); font-size: 0.9rem; }
+  .ph-x { margin-left: auto; border: 0; background: rgba(31,52,64,0.1); border-radius: 50%; width: 30px; height: 30px; font-size: 1.2rem; line-height: 1; }
+  .ph-sec { display: grid; gap: 6px; }
+  .ph-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .ph-list li { background: #fff; border-radius: 8px; padding: 8px 10px; display: grid; gap: 3px; font-size: 0.9rem; box-shadow: 0 1px 0 rgba(31,52,64,0.08); }
+  .ph-list li.done { opacity: 0.6; text-decoration: line-through; }
+  .ph-list .who { font: 800 0.95rem/1 var(--display); text-transform: uppercase; letter-spacing: 0.04em; }
+  .ph-list .meta { font-size: 0.78rem; color: var(--steel); }
+  .ph-list .btn { padding: 7px 12px 6px; font-size: 0.9rem; justify-self: start; }
+  .ph-msgs li.unread { box-shadow: inset 3px 0 0 var(--signal); }
+  #ph-you { display: grid; gap: 4px; font-size: 0.9rem; }
+
   /* Garage and achievements on the menu */
   .garage { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
   .upg { text-align: left; border: 0; border-radius: 4px; padding: 10px 12px; background: rgba(255,255,255,0.62); display: grid; gap: 3px; }
@@ -374,7 +406,7 @@
       </div>
       <div class="row cta">
         <button class="btn primary big" id="btn-continue"><span class="cta-label">Play</span><span class="cta-sub" id="continue-sub"></span></button>
-        <button class="btn" id="btn-free">Free roam</button>
+        <button class="btn" id="btn-free">City life</button>
         <button class="btn ghost" id="btn-settings">Settings</button>
       </div>
       <div class="progress" id="progress" aria-label="Your progress"></div>
@@ -488,6 +520,7 @@
     <div class="row">
       <button class="btn primary" id="btn-retry">Run again</button>
       <button class="btn" id="btn-share">Challenge a friend</button>
+      <button class="btn" id="btn-results-city" hidden>Back to the city</button>
       <button class="btn ghost" id="btn-results-menu">Menu</button>
     </div>
     <div class="share-box" id="share-box" hidden>
@@ -520,6 +553,14 @@
   <div id="tip" hidden></div>
   <div id="keys" aria-label="Controls"></div>
   <div id="cash" aria-label="Cash">$0</div>
+  <div id="life" hidden>
+    <div class="life-clock"><b id="life-clock">07:00</b><span id="life-day">Day 1</span></div>
+    <div class="need"><span>Energy</span><i class="bar"><i id="need-energy"></i></i></div>
+    <div class="need"><span>Food</span><i class="bar"><i id="need-food"></i></i></div>
+    <div class="need"><span>Mood</span><i class="bar"><i id="need-mood"></i></i></div>
+    <div class="life-note" id="life-note"></div>
+  </div>
+  <button id="btn-phone" aria-label="Phone" hidden>Phone<i id="phone-badge" hidden></i></button>
   <div id="area" aria-live="polite"><b id="area-name"></b><span id="area-sub"></span></div>
   <div id="job" hidden><span class="job-k">Courier job</span><b id="job-text"></b><span id="job-time"></span></div>
   <div id="radio" hidden></div>
@@ -544,6 +585,23 @@
   <div class="bm-head"><b>Map</b><span>Click to set a waypoint · Tab or Esc to close</span></div>
   <div class="bm-legend"><span><i style="background:#ff6a2b"></i>You</span><span><i style="background:#ffd34d"></i>Waypoint</span><span><i style="background:#ffb347"></i>Postcard</span><span><i style="background:#2f6f8f"></i>Car</span><span><i style="background:#fff"></i>Seaplane</span></div>
 </section>
+<aside id="phone" hidden aria-label="Phone">
+  <div class="ph-head"><b id="ph-clock"></b><span id="ph-day"></span><button class="ph-x" id="btn-phone-x" aria-label="Close phone">×</button></div>
+  <div class="ph-sec"><span class="label">You</span><div id="ph-you"></div></div>
+  <div class="ph-sec"><span class="label">Today</span><ul class="ph-list" id="ph-goals"></ul></div>
+  <div class="ph-sec"><span class="label">Missions</span><ul class="ph-list" id="ph-story"></ul></div>
+  <div class="ph-sec"><span class="label">Messages</span><ul class="ph-list ph-msgs" id="ph-inbox"></ul></div>
+</aside>
+
+<section id="dayend" class="screen dialog-wrap" hidden>
+  <div class="dialog">
+    <div class="eyebrow"><b id="de-title">Day 1</b><span>Good night</span></div>
+    <h2 id="de-head">Day done</h2>
+    <ul class="splits" id="de-list"></ul>
+    <div class="row"><button class="btn primary" id="btn-newday">Start the day</button></div>
+  </div>
+</section>
+
 <div id="fade"></div>
 <div id="photo-ui" hidden>Photo mode · mouse to orbit · wheel to zoom · Enter to save · O or Esc to exit</div>
 

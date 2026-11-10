@@ -18,6 +18,8 @@ import { placeParcels, Parcels } from './parcels.js';
 import { Details } from './details.js';
 import { DISTRICTS, pickDistrict } from './districts.js';
 import { Combo } from './combo.js';
+import { CityLife, CONTACTS, FOOD_NAMES, RENT } from './citylife.js';
+import { CAREERS, ARTIFACTS, rollArtifact, careerRank } from './careers.js';
 import { Weather } from './weather.js';
 import { Achievements, ACHIEVEMENTS } from './achievements.js';
 import { Pedestrians } from './pedestrians.js';
@@ -252,6 +254,7 @@ function updateCombo(dt) {
   player.flow = combo.flow;
   if (notice) {
     if (notice.n && notice.n > comboMovesBest) { comboMovesBest = notice.n; store.set('combo.moves', comboMovesBest); }
+    if (notice.n >= 5 && !active) { life.event('combo5'); life.mood(2); }
     hud.toast(notice.text, 1300);
     if (!notice.lost) { sound.chime(); if (combo.best > (store.get('combo.best') || 0)) store.set('combo.best', combo.best); }
   }
@@ -458,6 +461,7 @@ function exitVehicle(silent = false) {
     setTouchMode('foot');
     hud.toast('Bailed out! Jump to open your parachute', 1800);
     ach.unlock('bail');
+    if (!active) life.event('bail');
     sound.whoosh();
     return;
   }
@@ -559,23 +563,25 @@ function startCourse(c) {
   if (c.relay) tip('relay', 'Relay: any way is fair. Press F at the car and the seaplane, and bail out in flight for the final drop.');
 }
 
-function startFree() {
+function startFree(resume = false) {
   fade();
   if (driving) exitVehicle(true);
   active = null;
   runner.clear();
   ghost.hide();
   resetAllVehicles();
-  const p = W.landmarks.hub.plaza;
-  spawnAt(new THREE.Vector3(p[0], 0, p[1]), new THREE.Vector3(0, 0, 0));
-  hud.setCourse('Free roam', null);
+  const lp = store.get('lifePos');
+  if (resume && lp) spawnAt(new THREE.Vector3(lp[0], lp[1], lp[2]), null);
+  else spawnAt(new THREE.Vector3(home.x, home.y, home.z), new THREE.Vector3(home.x + home.nx * 10, 0, home.z + home.nz * 10));
+  hud.setCourse('City life', null);
   parcels.show(true);
   combo.reset();
   state = 'play';
   showScreen(null);
   hud.show(true);
   input.enabled = true;
-  hud.toast('Free roam', 1400);
+  hud.toast(`Day ${life.s.day} · ${life.clock}`, 1400);
+  tip('life', 'City life: keep an eye on energy, food and mood. P opens your phone: work, goals and messages. Sleep at home.');
   tip('move', isTouch ? 'Left side to run, right side to look. Push the stick all the way to sprint.' : 'WASD to run, mouse to look. Hold Shift to sprint.');
   tip('parcels', `Fog City postcards glow on rooftops, piers and the bridge. Find all ${parcels.total}.`);
   lockPointer();
@@ -635,6 +641,10 @@ function finish() {
   const PRIZE = [0, 100, 250, 500];
   if (rank(t) > rank(prev)) addCash(PRIZE[rank(t)] - PRIZE[rank(prev)]);
   if (active.daily) ach.unlock('daily');
+  if (medal) { life.event('medal'); life.mood(5); }
+  life.storyEvent({ course: active.id.replace(D.courseIds, ''), medal: !!medal });
+  $('#btn-results-city').hidden = !lifeReturn;
+  saveLife();
   $('#res-course').textContent = active.name;
   $('#res-time').textContent = fmtTime(t);
   // Say how close the next medal was.
@@ -829,7 +839,7 @@ function renderCharacter() {
   $('#char-val').textContent = L ? L.label : '';
 }
 
-$('#btn-free').addEventListener('click', startFree);
+$('#btn-free').addEventListener('click', () => startFree(true));
 
 // ---------- ghost-race links ----------
 let challenge = null, rival = null;
@@ -919,8 +929,11 @@ document.addEventListener('pointerlockchange', () => {
 });
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP') {
-    if (state === 'paused') resume(); else pause();
+    if (state === 'phone') togglePhone(false);
+    else if (state === 'play' && !active) togglePhone(true);
+    else if (state === 'paused') resume(); else pause();
   }
+  if (e.code === 'Escape' && state === 'phone') { togglePhone(false); return; }
   if (state === 'photo') {
     if (e.code === 'Enter') savePhoto();
     if (e.code === 'Escape' || e.code === 'KeyO') { togglePhoto(false); input.enabled = true; }
@@ -1043,7 +1056,7 @@ function updateKeyHints() {
   if (dev === 'keys') {
     if (v && v.kind === 'car') { add(K('Shift'), 'Nitro'); add(K('G'), 'Horn'); add(K('Q'), 'Radio'); }
     if (v) add(K('V'), 'Camera');
-    if (!active) { add(K('Tab'), 'Map'); if (!v) add(K('J'), job ? 'Cancel job' : 'Courier job'); }
+    if (!active) { add(K('Tab'), 'Map'); add(K('P'), 'Phone'); if (!v) add(K('J'), job ? 'Cancel gig' : 'Take a gig'); }
   } else if (dev === 'pad' && v && v.kind === 'car') add(K('RT'), 'Nitro');
   if (dev === 'keys' || dev === 'pad') add(pick(K('R'), K('View'), null), active ? 'Restart' : 'Unstick');
   if (dev === 'keys') add(K('Esc'), 'Pause');
@@ -1099,6 +1112,7 @@ function stepVehicle(dt, frozen) {
     }
     for (const e of v.events) {
       if (e.startsWith('crash:')) {
+        if (job && job.career === 'pilot') endJob('The tour ended badly. Gig failed');
         hud.toast(e.slice(6), 1600);
         particles.debris(v.pos.x, v.pos.y + 2, v.pos.z);
         if (v.pos.y < 2) particles.splash(v.pos.x, -1.6, v.pos.z, 2);
@@ -1112,11 +1126,12 @@ function stepVehicle(dt, frozen) {
         else v.resetToDock();
         rig.yaw = v.heading + Math.PI;
       } else if (e === 'Splashdown') {
+        if (!active) life.event('splashdown');
         particles.splash(v.pos.x, -1.6, v.pos.z, 1);
         sound.splash(0.6);
         hud.toast(e, 900);
       } else {
-        if (e === 'Takeoff') { sound.whoosh(); ach.unlock('takeoff'); }
+        if (e === 'Takeoff') { sound.whoosh(); ach.unlock('takeoff'); if (!active) life.event('takeoff'); }
         hud.toast(e, 900);
       }
     }
@@ -1155,8 +1170,8 @@ function footEffects(dt) {
     if (e === 'Roll') particles.dust(p.pos.x, p.pos.y, p.pos.z, 1);
     if (e === 'Parachute') { sound.whoosh(); rig.shake(0.3); tip('chute', isTouch ? 'Stick left/right to turn, up to dive, down to flare. Jump again to cut away.' : 'A/D to turn, W to dive, S to flare. Jump again to cut away.'); }
     if (e === 'Chute collapsed') rig.shake(0.5);
-    if (e === 'Zipline') ach.unlock('zip');
-    if (e === 'Landed') ach.unlock('chute');
+    if (e === 'Zipline') { ach.unlock('zip'); if (!active) life.event('zip'); }
+    if (e === 'Landed') { ach.unlock('chute'); if (!active) life.event('chute'); }
     if (e === 'Zipline') { sound.click(); tip('zip', 'Jump to let go early and keep your speed.'); }
     if (e === 'Climb') tip('ladder', 'Ladders run all the way to the roof. Jump to let go.');
     if (e === 'Splash') { particles.splash(p.pos.x, -1.6, p.pos.z, 1); sound.splash(1); }
@@ -1175,6 +1190,7 @@ let statsSave = 0;
 function addCash(n) {
   if (!n) return;
   cash += n;
+  if (typeof life !== 'undefined') { if (n > 0) life.earn(n); else life.spend(-n); }
   store.set('cash', Math.round(cash));
   const el = $('#cash');
   el.textContent = `$${Math.round(cash).toLocaleString()}`;
@@ -1232,12 +1248,14 @@ function borrowCar(tc) {
   enterVehicle(car);
   hud.toast('Borrowed a car', 900);
   ach.unlock('borrow');
+  life.event('borrow');
 }
 
 // --- damage and wrecks ---
 let wreckT = 0;
 function carDamage(v, impact) {
   const before = v.health;
+  if (job && job.career === 'driver' && job.i > 0 && impact > 7) { job.stars = Math.max(1, job.stars - 1); hud.toast('Your passenger did not enjoy that', 900); }
   v.damage(impact * 1.3);
   if (active) v.health = Math.max(8, v.health); // runs never end in a wreck
   if (v.health <= 0 && before > 0) {
@@ -1316,6 +1334,7 @@ function carTricks(dt) {
       const pay = Math.round(50 + dist * 4 + air.t * 40);
       stats.stunts++;
       addCash(pay);
+      if (!active) { life.event('stunt'); life.mood(3); }
       hud.toast(`Stunt jump · ${air.t.toFixed(1)} s · ${Math.round(dist)} m  +$${pay}`, 1800);
     }
     air.t = 0; air.slow = false;
@@ -1349,9 +1368,17 @@ function carTricks(dt) {
   }
 }
 
-// --- courier jobs (J) ---
+// --- City Life: the day-to-day layer (see citylife.js) ---
+const life = new CityLife(store.get('life'));
+life.s.work = life.s.work || {};
+life.s.view = life.s.view || 0;
+let career = store.get('career') || 'courier';
+const finds = store.get('finds') || [];
+const saveLife = () => store.set('life', life.save());
+
+// --- gigs: one active job from any career (J, or the phone's Work tab) ---
 let job = null;
-const jobBeacon = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 300, 16, 1, true).translate(0, 150, 0),
+const jobBeacon = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 300, 24, 1, true).translate(0, 150, 0),
   new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.3, depthWrite: false, fog: false, side: THREE.DoubleSide }));
 jobBeacon.visible = false;
 scene.add(jobBeacon);
@@ -1368,56 +1395,496 @@ function pickSpot(from, minD, maxD) {
   }
   return null;
 }
-function toggleJob() {
-  if (job) { endJob('Job cancelled'); return; }
+function groundAround(cx, cz, r) {
+  for (let i = 0; i < 60; i++) {
+    const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * r;
+    const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+    const fl = W.world.floorAt(x, z, 3, 0);
+    if (fl.solid && !W.world.pointBlocked(x, fl.y + 1, z)) return { x, y: fl.y, z };
+  }
+  return null;
+}
+const workRank = (id) => careerRank(life.s.work[id] || 0);
+
+function makeGig(id, from) {
+  const H = W.landmarks.hub, bi = W.landmarks.bridgeInfo;
+  const t0 = bi.at(BRIDGE.towers[0], 0), t1 = bi.at(BRIDGE.towers[1], 0);
+  if (id === 'courier') {
+    const a = pickSpot(from, 120, 320); if (!a) return null;
+    const b = pickSpot(a, 380, 900); if (!b) return null;
+    const dist = Math.hypot(b.x - a.x, b.z - a.z);
+    return { title: 'Courier run', base: 150 + dist / 3, timeBonus: 5, stages: [
+      { type: 'goto', ...a, reach: 4, label: `Pick up the parcel · ${a.name}` },
+      { type: 'goto', ...b, reach: 4, timed: Math.round(dist / 7 + 25), label: `Deliver to ${b.name}`, done: 'deliver' },
+    ] };
+  }
+  if (id === 'archaeologist') {
+    const c = pickSpot(from, 200, 700); if (!c) return null;
+    const h = groundAround(c.x, c.z, 32); if (!h) return null;
+    return { title: 'Dig', base: 0, stages: [
+      { type: 'goto', ...c, reach: 30, label: `Head to the dig site near ${c.name}` },
+      { type: 'search', x: c.x, y: c.y, z: c.z, r: 36, hx: h.x, hy: h.y, hz: h.z, label: 'Sweep with the detector, dig where it screams' },
+    ] };
+  }
+  if (id === 'photographer') {
+    const briefs = [
+      { text: `The ${D.hubName} from above. Get higher than its top.`, subject: () => new THREE.Vector3(0, H.top * 0.6, 0),
+        ok: (c) => c.y > H.top + 12 && Math.hypot(c.x, c.z) < 350, x: 0, y: H.top, z: 0 },
+      { text: `The ${D.bridgeName} from the water. Be out on the bay.`, subject: () => new THREE.Vector3(t0[0], bi.towerTop * 0.5, t0[1]),
+        ok: (c) => !W.world.floorAt(c.x, c.z, c.y, 0).solid && Math.hypot(c.x - t0[0], c.z - t0[1]) < 700, x: t0[0], y: 0, z: t0[1] },
+      { text: `Along the ${D.bridgeName} deck, the far tower in shot.`, subject: () => new THREE.Vector3(t1[0], bi.towerTop * 0.6, t1[1]),
+        ok: (c) => (player.pos.y > bi.deckY - 3 || (driving && driving.pos.y > bi.deckY - 3)) && Math.hypot(c.x - t0[0], c.z - t0[1]) < 900, x: t0[0], y: bi.deckY, z: t0[1] },
+      { text: 'A ferry, up close.', subject: () => { const f = nearestFerry(); return new THREE.Vector3(f.x, 4, f.z); },
+        ok: (c) => { const f = nearestFerry(); return Math.hypot(c.x - f.x, c.z - f.z) < 90; }, dyn: true },
+      { text: `The ${D.hubName} at night.`, subject: () => new THREE.Vector3(0, H.top * 0.6, 0),
+        ok: (c) => life.night > 0.5 && Math.hypot(c.x, c.z) < 600, x: 0, y: 0, z: 0, night: true },
+    ];
+    const pool = briefs.filter((b) => !b.night || life.night > 0.3 || life.s.minute % 1440 > 17 * 60);
+    const b = pool[Math.floor(Math.random() * pool.length)];
+    return { title: 'Photo assignment', base: 260, stages: [{ type: 'photo', brief: b, label: b.text, ...(b.dyn ? nearestFerry() : { x: b.x, y: b.y, z: b.z }) }] };
+  }
+  if (id === 'driver') {
+    const a = pickSpot(from, 60, 260); if (!a) return null;
+    const b = pickSpot(a, 450, 1300); if (!b) return null;
+    const dist = Math.hypot(b.x - a.x, b.z - a.z);
+    return { title: 'Ride', base: 120 + dist / 2.5, stars: 5, stages: [
+      { type: 'goto', ...a, reach: 7, need: 'car', label: `Pick up your passenger · ${a.name}` },
+      { type: 'goto', ...b, reach: 7, need: 'car', timed: Math.round(dist / 12 + 35), label: `Drop them at ${b.name}` },
+    ] };
+  }
+  if (id === 'pilot') {
+    if (!V.plane) return null;
+    const dock = V.dock;
+    const mid = bi.at((BRIDGE.towers[0] + BRIDGE.towers[1]) / 2, 0);
+    return { title: 'Sightseeing flight', base: 650, stages: [
+      { type: 'goto', x: dock.pos.x, y: dock.pos.y, z: dock.pos.z, reach: 30, need: 'plane', label: 'Board the seaplane at the dock' },
+      { type: 'goto', x: 0, y: H.top + 60, z: 0, reach: 45, air: true, need: 'plane', label: `Circle over the ${D.hubName}` },
+      { type: 'goto', x: t0[0], y: bi.towerTop + 45, z: t0[1], reach: 45, air: true, need: 'plane', label: `Over the ${D.bridgeName} tower` },
+      { type: 'goto', x: mid[0], y: bi.deckY + 40, z: mid[1], reach: 50, air: true, need: 'plane', label: 'Along the middle of the span' },
+      { type: 'goto', x: dock.pos.x, y: dock.pos.y, z: dock.pos.z, reach: 80, need: 'plane', water: true, label: 'Land them back at the dock' },
+    ] };
+  }
+  if (id === 'inspector') {
+    const pts = [
+      { x: t0[0], y: bi.towerTop, z: t0[1], label: `The top of the ${D.bridgeName} tower` },
+      { ...(() => { const c = bi.at(BRIDGE.towers[0] * 0.55, -(BRIDGE.halfWidth + 0.5)); return { x: c[0], z: c[1], y: bi.cableY(BRIDGE.towers[0] * 0.55) + 0.7 }; })(), label: 'A cable band halfway up the main cable' },
+      { x: H.face[0] * H.balcony.r, y: H.balcony.y, z: H.face[1] * H.balcony.r, label: `The top of the ${D.hubName}` },
+    ];
+    const roofs = W.world.ladders.filter((L) => L.y1 > 25 && L.y1 < 120);
+    if (roofs.length) {
+      const L = roofs[Math.floor(Math.random() * roofs.length)];
+      pts.push({ x: L.x - L.nx * 2.5, y: L.y1, z: L.z - L.nz * 2.5, label: 'A rooftop service hatch' });
+    }
+    const pick = pts.sort(() => Math.random() - 0.5).slice(0, 2);
+    return { title: 'Inspection round', base: 220 + pick.reduce((a, p) => a + p.y * 1.6, 0), stages: pick.map((p) => ({ type: 'inspect', ...p, label: `Inspect: ${p.label}` })) };
+  }
+  return null;
+}
+function nearestFerry() {
+  const f = driving ? driving.pos : player.pos;
+  let best = ferries.boats[0];
+  for (const b of ferries.boats) if (Math.hypot(b.x - f.x, b.z - f.z) < Math.hypot(best.x - f.x, best.z - f.z)) best = b;
+  return best ? { x: best.x, y: 2, z: best.z } : { x: 0, y: 0, z: 0 };
+}
+
+function startGig(id = career) {
+  if (active) return;
+  if (job) endJob(null);
   const from = driving ? driving.pos : player.pos;
-  const pick = pickSpot(from, 120, 320);
-  if (!pick) { hud.toast('No jobs nearby right now', 1200); return; }
-  job = { stage: 'pickup', target: pick, time: null };
-  jobBeacon.position.set(pick.x, pick.y, pick.z);
-  jobBeacon.visible = true;
+  const g = makeGig(id, from);
+  if (!g) { hud.toast('No work like that around here right now', 1400); return; }
+  career = id;
+  store.set('career', id);
+  job = { career: id, ...g, i: 0, time: null, hold: 0, beep: 0, nearMisses: 0 };
+  enterStage();
   $('#job').hidden = false;
   sound.chime();
-  tip('job', 'Courier job: grab the parcel at the yellow beacon, then deliver it before the clock runs out. Any way is fair.');
+  const C = CAREERS.find((c) => c.id === id);
+  hud.toast(`${C.name}: ${g.title}`, 1400);
+  if (id === 'archaeologist') tip('dig', 'Archaeology: the detector beeps faster as you close in. Stand where it screams and hold E to dig.');
+  if (id === 'photographer') tip('photo-gig', 'Photojournalism: get into position, press O for photo mode, frame the subject, Enter to shoot.');
+  if (id === 'driver') tip('ride', 'Ride-share: you need a car (borrow one with F). Every crash costs a star.');
+  if (id === 'inspector') tip('inspect', 'Inspector: climb to each point and hold E to inspect it.');
+  if (id === 'pilot') tip('tour', 'Tour pilot: fly through each marker, then land gently by the dock. A crash ends the tour.');
+}
+function enterStage() {
+  const st = job.stages[job.i];
+  job.target = st;
+  job.stage = st.label;
+  job.time = st.timed != null ? st.timed : job.time;
+  job.hold = 0;
+  jobBeacon.position.set(st.x, st.type === 'goto' && st.air ? st.y - 40 : (st.y || 0), st.z);
+  jobBeacon.scale.set(st.type === 'search' ? st.r / 2.2 : st.air ? 6 : 1, 1, st.type === 'search' ? st.r / 2.2 : st.air ? 6 : 1);
+  const C = CAREERS.find((c) => c.id === job.career);
+  jobBeacon.material.color.set(C ? C.color : '#ffd34d');
+  jobBeacon.visible = true;
+}
+function toggleJob() {
+  if (job) { endJob('Gig cancelled'); return; }
+  startGig(career);
 }
 function endJob(msg) {
   if (!job) return;
   job = null;
   jobBeacon.visible = false;
   $('#job').hidden = true;
-  if (msg) hud.toast(msg, 1600);
+  if (msg) hud.toast(msg, 1800);
 }
+function finishGig(extra = 0, note = '') {
+  const id = job.career;
+  const before = workRank(id).name;
+  let pay = job.base + extra;
+  if (job.timeBonus && job.time > 0) pay += job.time * job.timeBonus;
+  if (id === 'driver') pay = pay * (job.stars / 5) + (job.stars >= 5 ? 60 : 0);
+  pay = Math.round(pay * workRank(id).pay * (life.s.mood > 70 ? 1.15 : life.s.mood < 30 ? 0.85 : 1));
+  life.s.work[id] = (life.s.work[id] || 0) + 1;
+  stats.jobs++;
+  addCash(pay);
+  life.event(id === 'courier' ? 'deliver' : 'gig');
+  life.mood(4);
+  const focus = driving ? driving.pos : player.pos;
+  particles.confetti(focus.x, focus.y + 1.5, focus.z);
+  sound.finish();
+  const after = workRank(id).name;
+  endJob(`${note}${note ? ' · ' : ''}Paid $${pay}${after !== before ? ` · Promoted to ${after}!` : ''}  ·  J for another`);
+  saveLife();
+}
+function holdE() { return input.down('KeyE', 'touch:grab', 'pad:grab'); }
 function jobTick(dt, focus) {
   if (!job) return;
-  const T = job.target;
-  const reach = driving ? 7 : 3.5;
-  if (Math.hypot(focus.x - T.x, focus.z - T.z) < reach && Math.abs(focus.y - T.y) < 4) {
-    if (job.stage === 'pickup') {
-      const drop = pickSpot(T, 380, 900);
-      if (!drop) { endJob('No drop-off found'); return; }
-      const dist = Math.hypot(drop.x - T.x, drop.z - T.z);
-      job = { stage: 'deliver', target: drop, time: Math.round(dist / 7 + 25), dist };
-      jobBeacon.position.set(drop.x, drop.y, drop.z);
-      sound.pickup();
-      hud.toast('Parcel picked up', 1000);
-    } else {
-      const pay = Math.round(150 + job.dist / 3 + job.time * 5);
-      stats.jobs++;
-      addCash(pay);
-      particles.confetti(focus.x, focus.y + 1.5, focus.z);
-      sound.finish();
-      endJob(`Delivered! +$${pay}  ·  J for another job`);
-      return;
+  const st = job.stages[job.i];
+  let info = '';
+  const inCar = driving && driving.kind === 'car', inPlane = driving && driving.kind === 'plane';
+  const need = st.need === 'car' ? !inCar : st.need === 'plane' ? !inPlane : false;
+  if (job.time != null) {
+    job.time -= dt;
+    if (job.time <= 0) { endJob('Out of time. Gig failed'); return; }
+  }
+  if (st.dyn || st.brief?.dyn) { const f = nearestFerry(); st.x = f.x; st.z = f.z; jobBeacon.position.set(f.x, 0, f.z); }
+  const dx = focus.x - st.x, dz = focus.z - st.z, d = Math.hypot(dx, dz);
+  if (need && !(st.need === 'plane' && job.i === 0 && d < st.reach)) {
+    info = st.need === 'car' ? 'You need a car: borrow one from traffic (F)' : 'Get in the seaplane';
+  } else if (st.type === 'goto') {
+    const dy = Math.abs(focus.y - st.y);
+    const vertical = st.air ? st.reach : Math.max(4, st.reach * 0.6);
+    const watered = !st.water || (inPlane && driving.state === 'water');
+    if (d < st.reach && dy < vertical && watered && (!st.need || !need)) return advanceStage();
+    info = `${Math.round(d)} m`;
+  } else if (st.type === 'search') {
+    const hd = Math.hypot(focus.x - st.hx, focus.z - st.hz);
+    if (d > st.r * 1.3 && hd > st.r) { info = `${Math.round(d)} m to the site`; }
+    else {
+      const k = Math.max(0, 1 - hd / (st.r * 1.2));
+      job.beep -= dt;
+      if (job.beep <= 0) { job.beep = Math.max(0.09, 1.1 - k * 1.05); sound.tone(500 + k * 1100, 0.05, 'square', 0.05); }
+      info = `Detector ${'▮'.repeat(1 + Math.round(k * 7))}${'▯'.repeat(7 - Math.round(k * 7))}`;
+      if (hd < 2.6 && !driving) {
+        lifePrompt = 'Hold E to dig';
+        if (holdE()) {
+          job.hold += dt;
+          if (Math.random() < dt * 20) particles.dust(st.hx, st.hy, st.hz, 0.6);
+          info = `Digging ${'●'.repeat(Math.ceil(job.hold / 0.5))}`;
+          if (job.hold >= 2) {
+            const a = rollArtifact();
+            finds.unshift({ id: a.id, day: life.s.day, district: D.id });
+            store.set('finds', finds.slice(0, 200));
+            life.event('dig');
+            return finishGig(a.value, `Found: ${a.name} (${a.era})`);
+          }
+        } else job.hold = 0;
+      }
+    }
+  } else if (st.type === 'inspect') {
+    const dy = focus.y - st.y;
+    if (d < 3.2 && dy > -1.5 && dy < 3 && !driving) {
+      lifePrompt = 'Hold E to inspect';
+      if (holdE()) {
+        job.hold += dt;
+        info = `Inspecting ${'●'.repeat(Math.ceil(job.hold / 0.4))}`;
+        if (job.hold >= 2) { sound.chime(); return advanceStage(); }
+      } else job.hold = 0;
+    } else info = `${Math.round(Math.hypot(d, dy))} m · ${Math.round(st.y)} m up`;
+  } else if (st.type === 'photo') {
+    info = 'O for photo mode, Enter to shoot';
+  }
+  $('#job-text').textContent = `${job.i + 1}/${job.stages.length} · ${st.label}`;
+  $('#job-time').textContent = info + (job.time != null ? ` · ${Math.ceil(job.time)} s` : '') + (job.career === 'driver' && job.i > 0 ? ` · ${'★'.repeat(Math.max(1, Math.round(job.stars)))}` : '');
+  $('#job').classList.toggle('urgent', job.time != null && job.time < 15);
+}
+function advanceStage() {
+  job.i++;
+  if (job.i >= job.stages.length) return finishGig();
+  sound.pickup();
+  enterStage();
+  hud.toast(job.stage, 1300);
+}
+// Photo gigs are judged when you save a photo.
+function judgePhoto() {
+  if (!job || job.stages[job.i].type !== 'photo') return;
+  const st = job.stages[job.i];
+  const subj = st.brief.subject();
+  const v = subj.clone().project(camera);
+  const framed = v.z < 1 && Math.abs(v.x) < 0.8 && Math.abs(v.y) < 0.8;
+  const clear = framed && W.world.segmentClear ? true : framed;
+  if (clear && st.brief.ok(camera.position)) {
+    const centred = 1 - Math.min(1, Math.hypot(v.x, v.y));
+    togglePhoto(false); input.enabled = true;
+    finishGig(Math.round(centred * 150), centred > 0.7 ? 'Front page shot' : 'Good shot');
+  } else hud.toast(framed ? `Not quite: ${st.brief.text}` : 'The subject isn’t in the frame', 1800);
+}
+
+// --- home and food trucks ---
+const home = (() => {
+  const items = W.buildings.filter((b) => !(b.b.b > 0) && b.b.h > 10 && b.b.h < 45 && Math.hypot(b.cx, b.cz) > 120 && Math.hypot(b.cx, b.cz) < 500);
+  items.sort((a, b) => Math.hypot(a.cx, a.cz) - Math.hypot(b.cx, b.cz));
+  for (const it of items) {
+    const s = it.s;
+    for (let e = 0; e < s.n; e++) {
+      const j = (e + 1) % s.n;
+      const len = Math.hypot(s.xs[j] - s.xs[e], s.zs[j] - s.zs[e]);
+      if (len < 5) continue;
+      const mx = (s.xs[e] + s.xs[j]) / 2, mz = (s.zs[e] + s.zs[j]) / 2;
+      const ox = mx + s.nxs[e] * 1.4, oz = mz + s.nzs[e] * 1.4;
+      const fl = W.world.floorAt(ox, oz, 2, 0);
+      if (!fl.solid || fl.y > 0.6 || W.world.pointBlocked(ox, 1, oz) || W.world.pointBlocked(ox + s.nxs[e] * 2, 1, oz + s.nzs[e] * 2)) continue;
+      // A door: frame plus a warm glowing panel.
+      const g = new THREE.Group();
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.7, 0.2), new THREE.MeshStandardMaterial({ color: 0x1f3440 }));
+      frame.position.y = 1.35;
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 2.4), new THREE.MeshStandardMaterial({ color: 0x3a2a1a, emissive: 0xffb860, emissiveIntensity: 0.6 }));
+      panel.position.set(0, 1.25, 0.11);
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.3, 0.08), new THREE.MeshStandardMaterial({ color: 0xff6a2b, emissive: 0xff6a2b, emissiveIntensity: 0.5 }));
+      sign.position.set(0, 2.95, 0.12);
+      g.add(frame, panel, sign);
+      g.position.set(mx + s.nxs[e] * 0.02, fl.y, mz + s.nzs[e] * 0.02);
+      g.rotation.y = Math.atan2(s.nxs[e], s.nzs[e]);
+      scene.add(g);
+      return { x: ox, y: fl.y, z: oz, nx: s.nxs[e], nz: s.nzs[e] };
     }
   }
-  if (job.stage === 'deliver') {
-    job.time -= dt;
-    if (job.time <= 0) { endJob('Too late. Job failed'); return; }
+  const p = W.landmarks.hub.plaza;
+  return { x: p[0], y: 0, z: p[1], nx: 0, nz: 1, name: 'the plaza' };
+})();
+const foodTrucks = (() => {
+  const out = [];
+  const colors = [0xd1495b, 0x2aa198, 0xe0a030, 0x3d5a80, 0x9b5de5, 0x4f9a6a];
+  const plaza = W.landmarks.hub.plaza;
+  for (let tries = 0; tries < 400 && out.length < 6; tries++) {
+    const r = STREETS[Math.floor(Math.random() * STREETS.length)];
+    if (!r || r.p.length < 2) continue;
+    const i = 1 + Math.floor(Math.random() * (r.p.length - 1));
+    const a = r.p[i - 1], b = r.p[i];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 12) continue;
+    const dx = (b[0] - a[0]) / len, dz = (b[1] - a[1]) / len;
+    const mx = (a[0] + b[0]) / 2 - dz * (r.w / 2 + 2.2), mz = (a[1] + b[1]) / 2 + dx * (r.w / 2 + 2.2);
+    const dd = Math.hypot(mx - plaza[0], mz - plaza[1]);
+    if (dd < 60 || dd > 800 || out.some((t) => Math.hypot(t.x - mx, t.z - mz) < 170)) continue;
+    const fl = W.world.floorAt(mx, mz, 2, 0);
+    if (!fl.solid || W.world.pointBlocked(mx, 1, mz) || W.world.pointBlocked(mx + dx * 3, 1, mz + dz * 3)) continue;
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.3, 2.5, 5), new THREE.MeshStandardMaterial({ color: colors[out.length % colors.length], roughness: 0.5 }));
+    body.position.y = 1.6;
+    const awning = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 4), new THREE.MeshStandardMaterial({ color: 0xf2efe6 }));
+    awning.position.set(-1.7, 2.6, 0); awning.rotation.z = -0.25;
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1), new THREE.MeshStandardMaterial({ color: 0x332211, emissive: 0xffd8a0, emissiveIntensity: 0.8, side: THREE.DoubleSide }));
+    glow.position.set(-1.16, 1.9, 0); glow.rotation.y = -Math.PI / 2;
+    for (const [wx, wz] of [[-1, 1.6], [1, 1.6], [-1, -1.6], [1, -1.6]]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10), new THREE.MeshStandardMaterial({ color: 0x1b1d20 }));
+      w.rotation.z = Math.PI / 2; w.position.set(wx, 0.4, wz); g.add(w);
+    }
+    g.add(body, awning, glow);
+    g.position.set(mx, fl.y, mz);
+    g.rotation.y = Math.atan2(dx, dz);
+    scene.add(g);
+    W.world.addBox(mx, mz, dx, dz, 2.5, 1.15, fl.y, fl.y + 2.9, { kind: 'prop' });
+    const price = 8 + out.length * 2;
+    out.push({ x: mx + dz * 2.4, z: mz - dx * 2.4, tx: mx, tz: mz, name: FOOD_NAMES[out.length % FOOD_NAMES.length], price, fill: 35 + price * 2 });
   }
-  const J = job.target;
-  $('#job-text').textContent = job.stage === 'pickup' ? `Pick up the parcel · ${J.name}` : `Deliver to ${J.name}`;
-  $('#job-time').textContent = job.time == null ? `${Math.round(Math.hypot(focus.x - J.x, focus.z - J.z))} m` : `${Math.ceil(job.time)} s`;
-  $('#job').classList.toggle('urgent', job.time != null && job.time < 15);
+  return out;
+})();
+function nearFood(p) { return foodTrucks.find((t) => Math.hypot(p.x - t.x, p.z - t.z) < 3.4 || Math.hypot(p.x - t.tx, p.z - t.tz) < 3.6); }
+
+// --- phone (P) ---
+let phoneOpen = false;
+function togglePhone(on = !phoneOpen) {
+  if (on && (state !== 'play' || active)) return;
+  phoneOpen = on;
+  $('#phone').hidden = !on;
+  if (on) {
+    state = 'phone';
+    input.enabled = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    for (const m of life.s.inbox) m.unread = false;
+    $('#phone-badge').hidden = true;
+    renderPhone();
+  } else {
+    state = 'play';
+    input.enabled = true;
+    lockPointer();
+  }
+}
+function placePoint(name) {
+  if (name === 'hub') { const p = W.landmarks.hub.plaza; return { x: p[0], y: 0, z: p[1] }; }
+  if (name === 'dock') return V.dock ? V.dock.shore : { x: 0, y: 0, z: 0 };
+  if (name === 'home') return home;
+  if (name === 'food') return foodTrucks[0] || home;
+  return null;
+}
+function renderPhone() {
+  const s = life.s;
+  $('#ph-clock').textContent = life.clock;
+  $('#ph-day').textContent = `Day ${s.day} · rent in ${life.rentDueIn} day${life.rentDueIn === 1 ? '' : 's'}`;
+  const bar = (v) => `<i class="bar"><i class="${v < 25 ? 'low' : v < 50 ? 'mid' : ''}" style="width:${Math.round(v)}%"></i></i>`;
+  $('#ph-you').innerHTML = `
+    <div class="need"><span>Energy</span>${bar(s.energy)}</div>
+    <div class="need"><span>Food</span>${bar(s.food)}</div>
+    <div class="need"><span>Mood</span>${bar(s.mood)}</div>
+    <div class="meta">Cash $${Math.round(cash).toLocaleString()} · Home: apartment on ${placeName(home) || 'the waterfront'}</div>`;
+  $('#ph-goals').innerHTML = s.goals.list.map((g) => `<li class="${g.done ? 'done' : ''}">${g.text}${g.need > 1 && !g.done ? ` <span class="meta">${g.event === 'drive' || g.event === 'run' ? `${(g.have / 1000).toFixed(1)} / ${(g.need / 1000).toFixed(1)} km` : `${g.have} / ${g.need}`}</span>` : ''}</li>`).join('')
+    + `<li class="meta">Each goal pays $100, all three another $200.</li>`;
+  // Work: every career, its rank, and a button to take a gig.
+  const work = CAREERS.map((C) => {
+    const n = s.work[C.id] || 0, R = careerRank(n);
+    const doing = job && job.career === C.id;
+    return `<li><span class="who" style="color:${C.color}">${C.name}</span><span class="meta">${R.name} · ${n} gig${n === 1 ? '' : 's'} · pay ×${R.pay}</span><span>${C.blurb}</span>
+      ${doing ? `<button class="btn ghost" data-quit="1">Quit this gig</button>` : `<button class="btn" data-gig="${C.id}">Take a gig</button>`}</li>`;
+  }).join('');
+  const story = life.activeSteps().map((a) => {
+    const st = a.step;
+    const btn = st.course ? `<button class="btn" data-course="${st.course}">Start the run</button>` : st.goto ? `<button class="btn ghost" data-goto="${st.goto}">Set waypoint</button>` : '';
+    return `<li><span class="who" style="color:${a.contact.color}">${a.contact.name} · ${a.chapter.title}</span><span>${st.text}${st.count > 1 ? ` (${a.prog} / ${st.count})` : ''}</span>${btn}</li>`;
+  }).join('') || '<li class="meta">No missions right now. New messages arrive in the morning.</li>';
+  $('#ph-story').innerHTML = story + `<li class="meta" style="margin-top:6px">WORK</li>` + work
+    + (finds.length ? `<li><span class="who">Your finds</span><span class="meta">${finds.slice(0, 8).map((f) => (ARTIFACTS.find((a) => a.id === f.id) || {}).name).join(' · ')}${finds.length > 8 ? ` and ${finds.length - 8} more` : ''}</span></li>` : '');
+  $('#ph-inbox').innerHTML = s.inbox.slice(0, 12).map((m) => {
+    const c = CONTACTS.find((k) => k.id === m.from);
+    return `<li class="${m.unread ? 'unread' : ''}"><span class="who" style="color:${c ? c.color : '#1f3440'}">${c ? c.name : m.from}</span><span>${m.text}</span><span class="meta">Day ${m.day} · ${m.clock}</span></li>`;
+  }).join('') || '<li class="meta">No messages yet.</li>';
+  const P = $('#phone');
+  P.querySelectorAll('[data-gig]').forEach((b) => b.addEventListener('click', () => { togglePhone(false); startGig(b.dataset.gig); }));
+  P.querySelectorAll('[data-quit]').forEach((b) => b.addEventListener('click', () => { endJob('Gig cancelled'); renderPhone(); }));
+  P.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => {
+    const p = placePoint(b.dataset.goto);
+    if (p) { waypoint = new THREE.Vector3(p.x, p.y || 0, p.z); hud.toast('Waypoint set', 900); }
+    togglePhone(false);
+  }));
+  P.querySelectorAll('[data-course]').forEach((b) => b.addEventListener('click', () => {
+    const c = courses.find((k) => k.id === D.courseIds + b.dataset.course);
+    if (!c) return;
+    togglePhone(false);
+    lifeReturn = true;
+    store.set('lifePos', [player.pos.x, player.pos.y, player.pos.z]);
+    startCourse(c);
+  }));
+}
+$('#btn-phone').addEventListener('click', () => togglePhone());
+$('#btn-phone-x').addEventListener('click', () => togglePhone(false));
+let lifeReturn = false;
+$('#btn-results-city').addEventListener('click', () => { lifeReturn = false; startFree(true); });
+
+// --- sleeping and the day summary ---
+function endDay(passedOut) {
+  const sum = life.sleep(passedOut);
+  if (sum.rent) addCash(-sum.rent);
+  const done = sum.goals.filter((g) => g.done).length;
+  $('#de-title').textContent = `Day ${sum.day}`;
+  $('#de-head').textContent = passedOut ? 'You passed out' : 'Good night';
+  $('#de-list').innerHTML = [
+    ['Earned', `$${Math.round(sum.earned).toLocaleString()}`],
+    ['Spent', `$${Math.round(sum.spent).toLocaleString()}`],
+    ...(sum.rent ? [['Rent paid', `$${sum.rent}`]] : []),
+    ['Goals', `${done} / ${sum.goals.length}`],
+    ...sum.goals.map((g) => [`${g.done ? '✓' : '·'} ${g.text}`, '']),
+    ['Mood', `${Math.round(sum.mood)}%`],
+    ...(passedOut ? [['Woke up on the street. Tomorrow starts tired.', '']] : []),
+  ].map(([a, b]) => `<li><span>${a}</span><span>${b}</span></li>`).join('');
+  $('#btn-newday').textContent = `Start day ${life.s.day}`;
+  endJob(null);
+  if (driving) exitVehicle(true);
+  state = 'dayend';
+  input.enabled = false;
+  sound.silence();
+  if (document.pointerLockElement) document.exitPointerLock();
+  showScreen('#dayend');
+  saveLife();
+}
+$('#btn-newday').addEventListener('click', () => {
+  showScreen(null);
+  hud.show(true);
+  spawnAt(new THREE.Vector3(home.x, home.y, home.z), new THREE.Vector3(home.x + home.nx * 10, 0, home.z + home.nz * 10));
+  fade();
+  state = 'play';
+  input.enabled = true;
+  hud.toast(`Day ${life.s.day} · ${life.clock}`, 1600);
+  lockPointer();
+});
+life.on((type, data) => {
+  if (type === 'message') {
+    hud.toast(`Message from ${data.contact.name}: ${data.chapter.title} · P for phone`, 2600);
+    $('#phone-badge').hidden = false;
+    [1320, 1760].forEach((f, i) => sound.tone(f, 0.1, 'sine', 0.08, null, i * 0.12));
+  }
+  if (type === 'goal') { addCash(100); hud.toast(`Goal done: ${data.text}  +$100`, 1800); }
+  if (type === 'allgoals') { addCash(200); hud.toast('All of today’s goals done  +$200', 2000); }
+  if (type === 'chapter') { addCash(data.chapter.pay); hud.toast(`${data.contact.name}: “${data.chapter.title}” complete  +$${data.chapter.pay}`, 2400); sound.finish(); }
+  if (type === 'step') hud.toast(`${data.contact.name}: ${data.step.text}`, 1800);
+  if (type === 'passout') endDay(true);
+  saveLife();
+});
+
+// --- the per-frame life tick (free roam only) ---
+let lifeSaveT = 0, placeT = 0;
+function lifeTick(dt, realDt) {
+  $('#life').hidden = !!active;
+  $('#btn-phone').hidden = !!active;
+  if (active) { player.energyMul = 1; return; }
+  const focus = driving ? driving.pos : player.pos;
+  const effort = !driving && (player.mode === 'climb' ? 0.8 : player.onGround && player.speed > 10 ? 1 : 0);
+  life.tick(realDt, effort);
+  if (state !== 'play') return; // passing out ends the day
+  player.energyMul = life.speedMul;
+  if (driving && driving.kind === 'car' && radioStation) life.mood(realDt * 0.02);
+  // HUD.
+  const s = life.s;
+  $('#life-clock').textContent = life.clock;
+  $('#life-day').textContent = `Day ${s.day}`;
+  for (const [k, v] of [['energy', s.energy], ['food', s.food], ['mood', s.mood]]) {
+    const el = $('#need-' + k);
+    el.style.width = `${Math.round(v)}%`;
+    el.className = v < 25 ? 'low' : v < 50 ? 'mid' : '';
+  }
+  const h = (s.minute % 1440) / 60;
+  $('#life-note').textContent = s.energy < 15 ? 'Exhausted. Go home and sleep.' : s.food < 15 ? 'Starving. Find a food truck.'
+    : (h >= 23 || h < 5) ? 'It’s late. Home is marked on the map.' : life.rentDueIn === 1 ? `Rent ($${RENT}) is due tomorrow.` : '';
+  // Places for the story, and interactions.
+  placeT -= realDt;
+  if (placeT <= 0) {
+    placeT = 0.5;
+    const plaza = W.landmarks.hub.plaza;
+    if (Math.hypot(focus.x - plaza[0], focus.z - plaza[1]) < 25) life.storyEvent({ goto: 'hub' });
+    if (V.dock && Math.hypot(focus.x - V.dock.shore.x, focus.z - V.dock.shore.z) < 18) life.storyEvent({ goto: 'dock' });
+    if (Math.hypot(focus.x - home.x, focus.z - home.z) < 5) life.storyEvent({ goto: 'home' });
+  }
+  if (!driving) {
+    const t = nearFood(player.pos);
+    if (t) {
+      lifePrompt = `Press E to eat at ${t.name} ($${t.price})`;
+      if (input.grabHit) {
+        if (cash < t.price) hud.toast('Not enough cash. Take a gig (J).', 1400);
+        else { addCash(-t.price); life.eat(t.fill); sound.pickup(); hud.toast(`${t.name}: delicious`, 1200); saveLife(); }
+      }
+    } else if (Math.hypot(player.pos.x - home.x, player.pos.z - home.z) < 3 && Math.abs(player.pos.y - home.y) < 2) {
+      const late = h >= 18 || h < 5 || s.energy < 35;
+      lifePrompt = late ? 'Press E to go to bed (ends the day)' : 'Press E to nap for two hours';
+      if (input.grabHit) {
+        if (late) endDay(false);
+        else { life.tick(120, 0); s.energy = Math.min(100, s.energy + 30); fade(); hud.toast('Napped for two hours', 1200); saveLife(); }
+      }
+    }
+  }
+  lifeSaveT -= realDt;
+  if (lifeSaveT <= 0) { lifeSaveT = 5; saveLife(); store.set('lifePos', [player.pos.x, player.pos.y, player.pos.z]); }
 }
 
 // --- waypoint and the full-screen map (Tab) ---
@@ -1437,7 +1904,11 @@ function mapState() {
   const t0 = W.landmarks.bridgeInfo.at(BRIDGE.towers[0], 0);
   marks.push({ x: 0, z: 0, color: '#1f3440', r: 5, label: D.hubName });
   marks.push({ x: t0[0], z: t0[1], color: '#c0442c', r: 5, label: D.bridgeName });
-  if (job) marks.push({ x: job.target.x, z: job.target.z, color: '#ffd34d', r: 6, ring: true, label: job.stage === 'pickup' ? 'Pick up' : 'Deliver' });
+  if (job) marks.push({ x: job.target.x, z: job.target.z, color: '#ffd34d', r: 6, ring: true, label: (CAREERS.find((c) => c.id === job.career) || {}).name });
+  if (!active) {
+    marks.push({ x: home.x, z: home.z, color: '#ff6a2b', r: 5, ring: true, label: 'Home' });
+    for (const t of foodTrucks) marks.push({ x: t.tx, z: t.tz, color: '#4f9a6a', r: 4, label: t.name });
+  }
   return { focus, heading: driving ? driving.heading : player.facing, marks, waypoint };
 }
 function toggleMap(on = !bigmap.open) {
@@ -1489,11 +1960,14 @@ function placeName(p) {
 
 // --- per-frame open-world tick ---
 const lastFocus = new THREE.Vector3();
+let lifePrompt = null;
 function openWorld(dt, realDt) {
+  lifePrompt = null;
   const focus = driving ? driving.pos : player.pos;
   trafficContact(dt);
   carTricks(dt);
   jobTick(dt, focus);
+  lifeTick(dt, realDt);
   if (waypoint && Math.hypot(focus.x - waypoint.x, focus.z - waypoint.z) < 20) { waypoint = null; hud.toast('Waypoint reached', 900); sound.chime(); }
   areaT -= realDt; areaShownT -= realDt;
   if (areaT <= 0) {
@@ -1515,9 +1989,9 @@ function openWorld(dt, realDt) {
   for (const c of V.cars) c.setLights(sky.lights);
   const d = lastFocus.distanceTo(focus);
   if (d < 50) {
-    if (driving && driving.kind === 'car') stats.drive += d;
+    if (driving && driving.kind === 'car') { stats.drive += d; if (!active) life.event('drive', d); }
     else if (driving) stats.fly += d;
-    else stats.run += d;
+    else { stats.run += d; if (!active) life.event('run', d); }
   }
   lastFocus.copy(focus);
   statsSave -= realDt;
@@ -1715,6 +2189,7 @@ function photoFrame(realDt) {
 }
 function savePhoto() {
   renderer.render(scene, camera);
+  judgePhoto();
   try {
     const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');
@@ -1722,6 +2197,7 @@ function savePhoto() {
     document.body.appendChild(a); a.click(); a.remove();
     hud.toast('Photo saved', 1000);
     ach.unlock('photo');
+    if (!active) life.event('photo');
   } catch (_) { hud.toast('This browser blocked the download', 1400); }
   const fl = $('#fade');
   fl.style.background = '#fff'; fade();
@@ -1752,6 +2228,7 @@ function worldExtras(dt, realDt) {
   for (const ev of ferries.update(dt)) {
     const d = Math.hypot(ev.x - focus.x, ev.z - focus.z);
     if (d < 900 && state === 'play') sound.shipHorn(Math.min(1, d / 900));
+    if (d < 500 && state === 'play' && !active) life.event('ferry');
   }
   streetcars.update(dt, state === 'play' ? [focus] : []);
   if (state !== 'play') return;
@@ -1766,7 +2243,10 @@ function worldExtras(dt, realDt) {
   trapTick(dt);
   // Achievements by place and moment.
   const h = W.landmarks.hub, bi = W.landmarks.bridgeInfo;
-  if (!driving && player.onGround && Math.hypot(player.pos.x, player.pos.z) < 12 && player.pos.y > h.balcony.y - 1) ach.unlock('hub-top');
+  if (!driving && player.onGround && Math.hypot(player.pos.x, player.pos.z) < 12 && player.pos.y > h.balcony.y - 1) {
+    ach.unlock('hub-top');
+    if (!active && life.s.view !== life.s.day) { life.s.view = life.s.day; life.event('view'); life.mood(10); }
+  }
   if (!driving && player.onGround && player.pos.y > bi.towerTop - 1) ach.unlock('tower-top');
   if (driving && driving.kind === 'car' && weather.k.rain > 0.6 && driving.speed > 8) ach.unlock('rain');
   achT -= realDt;
@@ -1790,6 +2270,8 @@ function frame(now) {
   input.pollPad(realDt);
   padMenus();
   W.update(dt, elapsed);
+  if (S.timeOfDay === 'cycle' && !active && state !== 'menu') { sky.mode = 'clock'; sky.u = life.skyU; sky.night = life.night; }
+  else if (sky.mode === 'clock') sky.setMode(S.timeOfDay);
   sky.apply(realDt, elapsed);
   weather.apply(realDt, camera, sky, sun, hemi);
   sound.rainLevel(state === 'play' || state === 'countdown' ? weather.k.rain : 0);
@@ -1902,6 +2384,7 @@ function frame(now) {
           particles.confetti(focus.x, focus.y + 1.5, focus.z);
           hud.toast(`Postcard ${parcels.count} / ${parcels.total} · ${parcels.spots[got][3]}`, 1800);
           addCash(250);
+          life.event('postcard'); life.mood(5);
         }
       }
     }
@@ -1935,7 +2418,7 @@ function frame(now) {
       speed: driving ? Math.abs(driving.speed) : (player.mode === 'zip' ? player.zip.speed : player.speed),
       alt: focus.y,
       throttle: driving && driving.kind === 'plane' ? driving.throttle : null,
-      prompt: driving ? null : player.prompt,
+      prompt: driving ? lifePrompt : (player.prompt || lifePrompt),
     });
 
     // Minimap, redrawn about 15 times a second.
@@ -2052,5 +2535,5 @@ if (/\.github\.io$/.test(location.hostname)) {
 // Handy for testing from the console.
 window.__fcr = { sun,
   W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene, V,
-  get countdown() { return countdown; }, weather, ferries, streetcars, ach, traps, togglePhoto, get job() { return job; }, toggleJob, toggleMap, borrowCar, peds, bigmap, addCash, get cash() { return cash; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
+  get countdown() { return countdown; }, life, startGig, togglePhone, home, foodTrucks, endDay, weather, ferries, streetcars, ach, traps, togglePhoto, get job() { return job; }, toggleJob, toggleMap, borrowCar, peds, bigmap, addCash, get cash() { return cash; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
 };

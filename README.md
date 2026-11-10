@@ -55,6 +55,14 @@ Small touches: switching tabs pauses a run, a quick restart has a 1.5 second cou
 shows the next medal you're chasing, the results say how far off the next medal you were, and in
 free roam the pointer leads to the nearest postcard you haven't found.
 
+## City life
+
+The **City life** button starts a day-to-day life in the district that carries on between visits:
+a clock and real nights, energy, food and mood, an apartment where you sleep, weekly rent, food
+trucks, three goals a day, a phone (P) with messages and story missions from three contacts, and six
+careers with their own ranks: courier, urban archaeologist (metal detector and digging), photojournalist,
+ride-share driver, tour pilot and bridge inspector. J takes a gig in your current career.
+
 ## Open world
 
 Free roam is a small open city: borrow any car in traffic (F), use nitro (Shift), the horn (G) and

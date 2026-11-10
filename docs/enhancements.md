@@ -2,6 +2,36 @@
 
 A running list of what has been added, newest batch first, and what's queued next.
 
+## Batch 5: City Life (a life, not just a race)
+
+Free roam is now **City Life**: a day-to-day life in the district that carries on between sessions.
+
+1. **Clock and days**: 1 real second is 1 game minute. The sky follows the clock, with real nights (dark sky, moonlight, every window lit).
+2. **Needs**: energy (drains faster when you sprint and climb; low energy slows you down), food and mood.
+   Hunger drains energy; a good mood pays 15% more, a bad one 15% less.
+3. **Home**: an apartment near the landmark with a glowing door. Sleep there to end the day (or nap for two hours).
+   Stay out past 2 am and you pass out and wake up tired.
+4. **Rent**: $400 every seven days.
+5. **Food trucks**: six around the district (Fog Bowl Noodles, Bay Taco Truck, Pier Coffee & Buns…); E to eat.
+6. **Daily goals**: three each day from a pool of fourteen, $100 each plus $200 for all three.
+7. **Phone** (P or the Phone button): needs, today's goals, missions, work and messages.
+8. **Story contacts** who text you chapter by chapter, a new chapter each morning after the last is done:
+   Rosa at courier dispatch (4 chapters), Theo from the parkour crew (5), Captain Mei the seaplane pilot (4).
+   Missions use everything in the game: deliveries, climbs, course medals, combos, flights, bail-outs.
+9. **Six careers**, each with five ranks (Trainee to Legend) and rising pay:
+   - **Courier**: pick up and deliver against the clock.
+   - **Urban archaeologist**: follow a lead to a dig site, sweep it with a metal detector that beeps faster as you
+     close in, hold E to dig. Ten kinds of find from the city's past, from a square ship nail to a Gold Rush
+     coin, a buried ship's bell and a gold nugget, kept in your collection.
+   - **Photojournalist**: briefs like the landmark from above, the bridge from the water, along the bridge deck,
+     a ferry up close, the landmark at night; judged when you save a photo, with a bonus for a centred shot.
+   - **Ride-share driver**: collect a passenger, drive them across town; every crash costs a star and the tip.
+   - **Tour pilot**: fly sightseers over the landmark, the bridge tower and the span, then land at the dock.
+   - **Bridge & tower inspector**: climb to points on the bridge tower, the main cable, rooftops and the landmark
+     and hold E to inspect.
+10. **End-of-day summary**: earned, spent, rent, goals, mood.
+11. Home and food trucks are on the full map; the pointer leads to the current gig.
+
 ## Batch 4: a living city
 
 1. **Weather**: clear, thick fog or rain, drifting every few minutes (or fixed in Settings). Rain dims the light, lights the windows, wets the roads (shinier, less grip) and drums on the roof.
@@ -50,15 +80,13 @@ Marina & Crissy Field district with the Golden Gate Bridge, per-district loading
 page, performance overlay and auto resolution, ghost-race links, combos and momentum, gamepads,
 GitHub Pages hosting with offline install.
 
-## Queued next: City Life (a life, not just a race)
+## Queued next
 
-- **Days and a clock**: the time of day becomes a calendar; each day starts at home.
-- **Needs**: energy (sleep at home), hunger (eat at cafés and food trucks), mood (fun, views, music).
-  Low energy slows you down, hunger drains energy, a good mood pays a little more.
-- **Home and rent**: an apartment near the hub; sleep to end the day and save; weekly rent.
-- **Daily goals**: three small things to do each day, e.g. eat breakfast, deliver two parcels, visit a view.
-- **Phone and contacts**: a boss, a friend and a pilot send messages with story missions built from
-  the game's pieces (deliver, race, fly, climb), told in short chapters.
-- **Career**: courier ranks unlock better-paying jobs and perks.
-- **End-of-day summary**: earned, spent, needs, goals done.
-- Later: passenger jobs, street races against AI drivers, buying a car, outfits.
+- **More story**: longer chapters per contact, a second set of contacts per district, small cutscenes with the camera.
+- **Archaeology museum**: donate finds to a museum wing at the landmark; complete sets for big rewards.
+- **Buy and furnish**: upgrade from the apartment to a bigger place with a view; buy your own car and boat.
+- **Relationships**: hang out with friends (races, photo walks, dinner at a food truck) to unlock their perks.
+- **Night life**: events that only happen at night (street races, rooftop parties, night photography).
+- **Weekly events**: Fleet Week air show (fly through the formation), a marathon, a regatta.
+- **More careers**: harbour patrol (rescue swimmers with the seaplane), film stunt performer, food-truck owner.
+- **Hunger and energy on vehicles**: fuel for the car and seaplane, charging, and gas stations.
