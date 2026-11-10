@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildWorld, BRIDGE } from './world.js';
-import { Player, LOOKS, SKIN_TONES } from './player.js';
+import { Player, LOOKS, SKIN_TONES, Avatar } from './player.js';
 import { CameraRig } from './camera.js';
 import { Input } from './input.js';
 import { Hud, fmtTime } from './hud.js';
@@ -1060,6 +1060,7 @@ function updateKeyHints() {
     if (!active) { add(K('Tab'), 'Map'); add(K('P'), 'Phone'); if (!v) add(K('J'), job ? 'Cancel gig' : 'Take a gig'); }
   } else if (dev === 'pad' && v && v.kind === 'car') add(K('RT'), 'Nitro');
   if (dev === 'keys' || dev === 'pad') add(pick(K('R'), K('View'), null), active ? 'Restart' : 'Unstick');
+  if (dev === 'keys' && !active) for (const m of modules) if (m.hints) for (const [k, l] of m.hints()) add(K(k), l);
   if (dev === 'keys') add(K('Esc'), 'Pause');
   if (dev === 'keys') add(K('H'), 'Hide hints');
   const html = items.join('');
@@ -1129,11 +1130,12 @@ function stepVehicle(dt, frozen) {
         rig.yaw = v.heading + Math.PI;
       } else if (e === 'Splashdown') {
         if (!active) life.event('splashdown');
+        moduleEvent('Splashdown');
         particles.splash(v.pos.x, -1.6, v.pos.z, 1);
         sound.splash(0.6);
         hud.toast(e, 900);
       } else {
-        if (e === 'Takeoff') { sound.whoosh(); ach.unlock('takeoff'); if (!active) life.event('takeoff'); }
+        if (e === 'Takeoff') { sound.whoosh(); ach.unlock('takeoff'); if (!active) life.event('takeoff'); moduleEvent('Takeoff'); }
         hud.toast(e, 900);
       }
     }
@@ -1169,6 +1171,7 @@ function footEffects(dt) {
   for (const e of p.events) {
     if (e === 'Wall jump' || e === 'Long jump') sound.jump();
     gigEvent(e);
+    moduleEvent(e);
     if (e === 'Slide') sound.whoosh();
     if (e === 'Roll') particles.dust(p.pos.x, p.pos.y, p.pos.z, 1);
     if (e === 'Parachute') { sound.whoosh(); rig.shake(0.3); tip('chute', isTouch ? 'Stick left/right to turn, up to dive, down to flare. Jump again to cut away.' : 'A/D to turn, W to dive, S to flare. Jump again to cut away.'); }
@@ -1339,6 +1342,7 @@ function carTricks(dt) {
       addCash(pay);
       if (!active) { life.event('stunt'); life.mood(3); }
       gigEvent('stunt');
+      moduleEvent('stunt');
       hud.toast(`Stunt jump · ${air.t.toFixed(1)} s · ${Math.round(dist)} m  +$${pay}`, 1800);
     }
     air.t = 0; air.slow = false;
@@ -1578,6 +1582,7 @@ function finishGig(extra = 0, note = '') {
   stats.jobs++;
   addCash(pay);
   life.event(id === 'courier' ? 'deliver' : 'gig');
+  moduleEvent(id === 'courier' ? 'deliver' : 'gig', { career: id, pay });
   life.mood(4);
   const focus = driving ? driving.pos : player.pos;
   particles.confetti(focus.x, focus.y + 1.5, focus.z);
@@ -1854,6 +1859,9 @@ function renderPhone() {
     const c = CONTACTS.find((k) => k.id === m.from);
     return `<li class="${m.unread ? 'unread' : ''}"><span class="who" style="color:${c ? c.color : '#1f3440'}">${c ? c.name : m.from}</span><span>${m.text}</span><span class="meta">Day ${m.day} · ${m.clock}</span></li>`;
   }).join('') || '<li class="meta">No messages yet.</li>';
+  const extra = modules.map((m) => (m.phoneHtml ? m.phoneHtml() : '')).join('');
+  $('#ph-mods').innerHTML = extra;
+  $('#ph-mods').hidden = !extra;
   const P = $('#phone');
   P.querySelectorAll('[data-gig]').forEach((b) => b.addEventListener('click', () => { togglePhone(false); startGig(b.dataset.gig); }));
   P.querySelectorAll('[data-sell]').forEach((b) => b.addEventListener('click', () => { sellFinds(); renderPhone(); }));
@@ -1873,12 +1881,21 @@ function renderPhone() {
   }));
 }
 $('#btn-phone').addEventListener('click', () => togglePhone());
+// Buttons inside module sections of the phone: the module decides; re-render after.
+$('#ph-mods').addEventListener('click', (e) => {
+  const t = e.target.closest('button, [data-action]');
+  if (!t) return;
+  let close = false;
+  for (const m of modules) if (m.onPhoneClick && m.onPhoneClick(t) === 'close') close = true;
+  if (close) togglePhone(false); else renderPhone();
+});
 $('#btn-phone-x').addEventListener('click', () => togglePhone(false));
 let lifeReturn = false;
 $('#btn-results-city').addEventListener('click', () => { lifeReturn = false; startFree(true); });
 
 // --- sleeping and the day summary ---
 function endDay(passedOut) {
+  moduleEvent('sleep', { passedOut });
   const sum = life.sleep(passedOut);
   if (sum.rent) addCash(-sum.rent);
   const done = sum.goals.filter((g) => g.done).length;
@@ -1971,6 +1988,23 @@ function partyTick(dt, focus) {
   }
 }
 
+
+// --- module host: self-contained City Life systems plug in here (see docs/module-contract.md) ---
+const modules = [];
+let moduleTarget = null;
+const ctx = {
+  THREE, scene, camera, W, BRIDGE, D, V, player, life, sound, hud, particles, store, Avatar, LOOKS,
+  getDriving: () => driving,
+  addCash: (n) => addCash(n),
+  setPrompt: (t) => { lifePrompt = t; },
+  holdE: () => holdE(),
+  pressedE: () => input.grabHit,
+  setTarget: (p) => { moduleTarget = p ? new THREE.Vector3(p.x, p.y || 0, p.z) : null; },
+  get foodSpots() { return foodTrucks.map((t) => ({ x: t.tx, z: t.tz, name: t.name, price: t.price })); },
+};
+function moduleEvent(name, data) { for (const m of modules) if (m.onEvent) m.onEvent(name, data); }
+function addModule(m) { if (m) modules.push(m); return m; }
+
 // --- the per-frame life tick (free roam only) ---
 let lifeSaveT = 0, placeT = 0;
 function lifeTick(dt, realDt) {
@@ -2010,7 +2044,7 @@ function lifeTick(dt, realDt) {
       lifePrompt = `Press E to eat at ${t.name} ($${t.price})`;
       if (input.grabHit) {
         if (cash < t.price) hud.toast('Not enough cash. Take a gig (J).', 1400);
-        else { addCash(-t.price); life.eat(t.fill); sound.pickup(); hud.toast(`${t.name}: delicious`, 1200); saveLife(); }
+        else { addCash(-t.price); life.eat(t.fill); sound.pickup(); hud.toast(`${t.name}: delicious`, 1200); saveLife(); moduleEvent('eat', t); }
       }
     } else if (finds.length && Math.hypot(player.pos.x - W.landmarks.hub.plaza[0], player.pos.z - W.landmarks.hub.plaza[1]) < 6) {
       lifePrompt = `Press E to donate ${finds.length} find${finds.length > 1 ? 's' : ''} to the museum`;
@@ -2025,6 +2059,7 @@ function lifeTick(dt, realDt) {
     }
   }
   partyTick(dt, focus);
+  for (const m of modules) if (m.update) m.update(dt, ctx);
   lifeSaveT -= realDt;
   if (lifeSaveT <= 0) { lifeSaveT = 5; saveLife(); store.set('lifePos', [player.pos.x, player.pos.y, player.pos.z]); }
 }
@@ -2051,6 +2086,7 @@ function mapState() {
     marks.push({ x: home.x, z: home.z, color: '#ff6a2b', r: 5, ring: true, label: 'Home' });
     for (const t of foodTrucks) marks.push({ x: t.tx, z: t.tz, color: '#4f9a6a', r: 4, label: t.name });
   }
+  if (!active) for (const m of modules) if (m.mapMarks) marks.push(...m.mapMarks());
   return { focus, heading: driving ? driving.heading : player.facing, marks, waypoint };
 }
 function toggleMap(on = !bigmap.open) {
@@ -2340,6 +2376,7 @@ function savePhoto() {
     hud.toast('Photo saved', 1000);
     ach.unlock('photo');
     if (!active) life.event('photo');
+    moduleEvent('photo');
   } catch (_) { hud.toast('This browser blocked the download', 1400); }
   const fl = $('#fade');
   fl.style.background = '#fff'; fade();
@@ -2559,7 +2596,7 @@ function frame(now) {
     hud.update({
       // Free roam: the pointer leads to the nearest postcard you haven't found.
       runner, camera, next: runner.next || (!active && state === 'play'
-        ? (job ? jobBeacon.position : waypoint || (parcels.nearestUncollected(focus) || {}).pos || null) : null), focus,
+        ? (job ? jobBeacon.position : moduleTarget || waypoint || (parcels.nearestUncollected(focus) || {}).pos || null) : null), focus,
       speed: driving ? Math.abs(driving.speed) : (player.mode === 'zip' ? player.zip.speed : player.speed),
       alt: focus.y,
       throttle: driving && driving.kind === 'plane' ? driving.throttle : null,
