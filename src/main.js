@@ -18,6 +18,8 @@ import { placeParcels, Parcels } from './parcels.js';
 import { Details } from './details.js';
 import { DISTRICTS, pickDistrict } from './districts.js';
 import { Combo } from './combo.js';
+import { Pedestrians } from './pedestrians.js';
+import { BigMap } from './bigmap.js';
 import { encodeRace, decodeRace, raceUrl, readRaceFromUrl } from './share.js';
 
 const $ = (s) => document.querySelector(s);
@@ -176,6 +178,7 @@ let driving = null;
 
 // ---------- life and street detail ----------
 const traffic = new Traffic(scene, map.roads, QUALITY[S.quality].traffic);
+const peds = new Pedestrians(scene, map.roads, W.world, 70);
 setLoad(90, 'Planting trees and painting crosswalks');
 await nextFrame();
 const details = (() => {
@@ -306,6 +309,7 @@ function applySettings() {
   particles.density = q.particles;
   sky.fogBase = q.fogFar;
   traffic.setCount(q.traffic);
+  peds.setCount({ high: 60, medium: 36, low: 18 }[S.quality] || 36);
   details.setRadius(q.detailRadius);
   input.sensitivity = 0.0024 * S.sensitivity;
   input.invertY = S.invertLook;
@@ -412,6 +416,8 @@ function enterVehicle(v) {
   rig.curDist = 8;
   setTouchMode(v.kind);
   sound.door();
+  sound.setRadio(v.kind === 'car' ? radioStation : 0);
+  $('#stat-boost').hidden = v.kind !== 'car';
   if (v.kind === 'plane') {
     tip('plane', isTouch
       ? 'Power + for throttle. Above 100 km/h push the stick up to take off. Land gently on the water. Exit in flight to bail out.'
@@ -424,6 +430,8 @@ function enterVehicle(v) {
 function exitVehicle(silent = false) {
   const v = driving;
   if (!v) return;
+  sound.setRadio(0);
+  $('#stat-boost').hidden = true;
   if (silent) {
     // Leaving a run or the menu: just put the courier back on foot.
     driving = null;
@@ -511,6 +519,8 @@ function nextMedal(c) {
 
 function startCourse(c) {
   const retry = active === c && state !== 'menu';
+  endJob(null);
+  fade();
   if (driving) exitVehicle(true);
   store.set('last.' + D.id, c.id);
   active = c;
@@ -545,6 +555,7 @@ function startCourse(c) {
 }
 
 function startFree() {
+  fade();
   if (driving) exitVehicle(true);
   active = null;
   runner.clear();
@@ -566,6 +577,8 @@ function startFree() {
 }
 
 function toMenu() {
+  endJob(null);
+  if (bigmap.open) bigmap.show(false);
   if (driving) exitVehicle(true);
   state = 'menu';
   runner.clear();
@@ -612,6 +625,10 @@ function finish() {
   }
   const m = active.medals;
   const medal = t <= m.gold ? 'Gold' : t <= m.silver ? 'Silver' : t <= m.bronze ? 'Bronze' : null;
+  // Prize money the first time you reach each medal on a course.
+  const rank = (x) => (x == null ? 0 : x <= m.gold ? 3 : x <= m.silver ? 2 : x <= m.bronze ? 1 : 0);
+  const PRIZE = [0, 100, 250, 500];
+  if (rank(t) > rank(prev)) addCash(PRIZE[rank(t)] - PRIZE[rank(prev)]);
   $('#res-course').textContent = active.name;
   $('#res-time').textContent = fmtTime(t);
   // Say how close the next medal was.
@@ -698,7 +715,13 @@ function renderMenu() {
     <span><i style="background:var(--gold)"></i>${tally.gold}</span>
     <span><i style="background:var(--silver)"></i>${tally.silver}</span>
     <span><i style="background:var(--bronze)"></i>${tally.bronze}</span>
-    <span>Postcards ${parcels.count} / ${parcels.total}</span>`;
+    <span>Postcards ${parcels.count} / ${parcels.total}</span>
+    <span style="color:#2f7a4a">$${Math.round(cash).toLocaleString()}</span>`;
+  const km = (m) => (m / 1000).toFixed(1) + ' km';
+  $('#stats').innerHTML = [
+    ['Ran', km(stats.run)], ['Drove', km(stats.drive)], ['Flew', km(stats.fly)],
+    ['Stunt jumps', stats.stunts], ['Near misses', stats.nearMiss], ['Jobs', stats.jobs],
+  ].map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join('');
 
   // Tabs.
   const tabs = $('#course-tabs');
@@ -879,6 +902,7 @@ function unstick() {
     return;
   }
   spawnAt(player.safe.clone(), null);
+  fade();
   hud.toast('Back on safe ground', 1000);
 }
 
@@ -889,7 +913,12 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP') {
     if (state === 'paused') resume(); else pause();
   }
-  if (e.code === 'Escape') pause();
+  if (e.code === 'Escape') { if (bigmap.open) toggleMap(false); else pause(); }
+  if (e.code === 'Tab' && (state === 'play' || state === 'map')) { e.preventDefault(); toggleMap(); }
+  if (state === 'play' && driving && driving.kind === 'car' && e.code === 'KeyG') honk();
+  if (state === 'play' && driving && e.code === 'KeyQ') cycleRadio();
+  if (state === 'play' && driving && e.code === 'KeyV') { camMode = (camMode + 1) % CAM_MODES.length; hud.toast(`Camera: ${CAM_MODES[camMode].name}`, 800); }
+  if (state === 'play' && !active && e.code === 'KeyJ') toggleJob();
   if (e.code === 'KeyR' && (state === 'play' || state === 'countdown' || state === 'results') && active) startCourse(active);
   else if (e.code === 'KeyR' && state === 'play' && !active) unstick();
   if (e.code === 'Enter' && state === 'results') startCourse(active);
@@ -996,6 +1025,11 @@ function updateKeyHints() {
     if (player.prompt && /parachute/i.test(player.prompt)) hint(pick('Space again to open your parachute', 'A again to open your parachute', 'Jump again to open your parachute'));
     else if (player.prompt && /fly|drive/.test(player.prompt)) hint(pick(player.prompt, player.prompt.replace('Press F', 'Press Y'), player.prompt.replace('Press F to', 'Tap')));
   }
+  if (dev === 'keys') {
+    if (v && v.kind === 'car') { add(K('Shift'), 'Nitro'); add(K('G'), 'Horn'); add(K('Q'), 'Radio'); }
+    if (v) add(K('V'), 'Camera');
+    if (!active) { add(K('Tab'), 'Map'); if (!v) add(K('J'), job ? 'Cancel job' : 'Courier job'); }
+  } else if (dev === 'pad' && v && v.kind === 'car') add(K('RT'), 'Nitro');
   if (dev === 'keys' || dev === 'pad') add(pick(K('R'), K('View'), null), active ? 'Restart' : 'Unstick');
   if (dev === 'keys') add(K('Esc'), 'Pause');
   if (dev === 'keys') add(K('H'), 'Hide hints');
@@ -1010,7 +1044,11 @@ function stepVehicle(dt, frozen) {
   const v = driving;
   const mv = frozen ? { x: 0, y: 0 } : input.move;
   if (v.kind === 'car') {
-    v.update(dt, { throttle: mv.y, steer: mv.x, handbrake: !frozen && input.handbrake }, W.world);
+    const wasBoosting = v.boosting;
+    v.update(dt, { throttle: mv.y, steer: mv.x, handbrake: !frozen && input.handbrake, boost: !frozen && input.sprint }, W.world);
+    if (v.boosting && !wasBoosting) { sound.boost(); tip('nitro', 'Nitro! It refills slowly when you let go.'); }
+    if (v.boosting) { const bx = -Math.sin(v.heading) * 2.3, bz = -Math.cos(v.heading) * 2.3; particles.sparks(v.pos.x + bx, v.pos.y + 0.5, v.pos.z + bz, 0.3); }
+    if (v.impact > 4) carDamage(v, v.impact);
     if (v.impact > 4) {
       const fx = Math.sin(v.heading) * 2, fz = Math.cos(v.heading) * 2;
       particles.sparks(v.pos.x + fx, v.pos.y + 0.6, v.pos.z + fz, Math.min(2, v.impact / 10));
@@ -1109,6 +1147,360 @@ function footEffects(dt) {
   if (p.onGround && p.speed > 11) tip('slide', 'Press C while sprinting to slide. Tap it just before a big landing to roll.');
 }
 
+// ================= open world: cash, borrowed cars, traffic, stunts, jobs, map =================
+let cash = store.get('cash') || 0;
+const stats = Object.assign({ run: 0, drive: 0, fly: 0, stunts: 0, nearMiss: 0, jobs: 0 }, store.get('stats') || {});
+let statsSave = 0;
+function addCash(n) {
+  if (!n) return;
+  cash += n;
+  store.set('cash', Math.round(cash));
+  const el = $('#cash');
+  el.textContent = `$${Math.round(cash).toLocaleString()}`;
+  el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  sound.cash();
+}
+$('#cash').textContent = `$${Math.round(cash).toLocaleString()}`;
+
+function fade() {
+  if (S.reduceMotion) return;
+  const f = $('#fade');
+  f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+}
+
+// --- camera distance (V) ---
+const CAM_MODES = [{ name: 'Normal', d: 1, h: 1, p: 1 }, { name: 'Far', d: 1.6, h: 1.4, p: 1.3 }, { name: 'Close', d: 0.62, h: 0.8, p: 0.8 }];
+let camMode = 0;
+
+// --- radio (Q) ---
+const STATIONS = ['Radio off', 'Fog FM 88.5 · lo-fi', 'Bay Beat 101.3 · dance'];
+let radioStation = store.get('radio') ?? 1;
+let radioToastT = 0;
+function cycleRadio() {
+  radioStation = (radioStation + 1) % STATIONS.length;
+  store.set('radio', radioStation);
+  sound.setRadio(driving && driving.kind === 'car' ? radioStation : 0);
+  const el = $('#radio');
+  el.textContent = STATIONS[radioStation];
+  el.hidden = false;
+  radioToastT = 1.6;
+}
+
+// --- horn (G): people nearby hop out of the way ---
+function honk() {
+  sound.horn();
+  for (const p of peds.people) if (Math.hypot(p.x - driving.pos.x, p.z - driving.pos.z) < 18) p.hop = 0.5;
+}
+
+// --- borrowing a car from traffic ---
+const borrowed = [];
+function borrowCar(tc) {
+  const t = traffic.take(tc);
+  const fl = W.world.floorAt(t.x, t.z, 3, 0);
+  const car = new Car(scene, t.x, fl.solid ? fl.y : 0, t.z, t.heading, t.color);
+  car.borrowed = true;
+  V.cars.push(car);
+  borrowed.push(car);
+  // Keep at most three borrowed cars lying around.
+  while (borrowed.length > 3) {
+    const old = borrowed.shift();
+    if (old === driving) { borrowed.push(old); break; }
+    scene.remove(old.mesh);
+    V.cars.splice(V.cars.indexOf(old), 1);
+  }
+  enterVehicle(car);
+  hud.toast('Borrowed a car', 900);
+}
+
+// --- damage and wrecks ---
+let wreckT = 0;
+function carDamage(v, impact) {
+  const before = v.health;
+  v.damage(impact * 1.3);
+  if (active) v.health = Math.max(8, v.health); // runs never end in a wreck
+  if (v.health <= 0 && before > 0) {
+    particles.debris(v.pos.x, v.pos.y + 1.2, v.pos.z);
+    sound.crash();
+    rig.shake(1.2);
+    hud.toast('Wrecked', 1600);
+    wreckT = 1.4;
+  }
+}
+
+// --- traffic contact and near misses ---
+function trafficContact(dt) {
+  const v = driving;
+  for (let i = 0; i < traffic.count; i++) {
+    const c = traffic.cars[i];
+    if (c.taken > 0) continue;
+    if (c.nm > 0) c.nm -= dt;
+    if (v && v.kind === 'car') {
+      const dx = v.pos.x - c.x, dz = v.pos.z - c.z, d = Math.hypot(dx, dz);
+      if (d < 2.7 && v.pos.y < 2) {
+        // Bump: push apart, lose speed along the hit, dent your car.
+        const nx = dx / (d || 1), nz = dz / (d || 1);
+        v.pos.x = c.x + nx * 2.7; v.pos.z = c.z + nz * 2.7;
+        const vn = v.vel.x * nx + v.vel.z * nz;
+        if (vn < 0) {
+          v.vel.x -= nx * vn * 1.4; v.vel.z -= nz * vn * 1.4;
+          const hit = -vn;
+          if (hit > 2) {
+            particles.sparks(c.x + nx * 1.3, 0.8, c.z + nz * 1.3, Math.min(2, hit / 8));
+            sound.scrape(hit * 2);
+            rig.shake(Math.min(0.8, hit / 20));
+            carDamage(v, hit);
+            c.bumped = 2.5;
+            c.nm = 3;
+          }
+        }
+      } else if (d < 4.6 && v.speed > 17 && !(c.nm > 0)) {
+        c.nm = 3;
+        stats.nearMiss++;
+        addCash(25);
+        hud.toast('Near miss +$25', 700);
+      }
+    } else if (!v) {
+      const dx = player.pos.x - c.x, dz = player.pos.z - c.z, d = Math.hypot(dx, dz);
+      if (d < 1.9 && player.pos.y < 1.5) {
+        const nx = dx / (d || 1), nz = dz / (d || 1);
+        player.pos.x = c.x + nx * 1.9; player.pos.z = c.z + nz * 1.9;
+        if (c.speed > 4 && !(c.nm > 0)) {
+          player.vel.x += nx * c.speed * 0.8; player.vel.z += nz * c.speed * 0.8; player.vel.y = 5;
+          player.onGround = false; player.stumble = 0.6;
+          c.bumped = 2; c.nm = 2;
+          sound.land(18);
+          hud.toast('Watch the traffic!', 1000);
+        }
+      }
+    }
+  }
+}
+
+// --- stunt jumps, drifts, smoke, wrecks ---
+const air = { t: 0, from: null, slow: false };
+const drift = { t: 0, pts: 0, gap: 0 };
+function carTricks(dt) {
+  const v = driving;
+  if (!v || v.kind !== 'car') { air.t = 0; drift.t = 0; return; }
+  if (!v.onGround) {
+    if (air.t === 0) air.from = v.pos.clone();
+    air.t += dt;
+    const fl = W.world.floorAt(v.pos.x, v.pos.z, v.pos.y, 0);
+    if (!air.slow && air.t > 0.3 && v.speed > 15 && v.pos.y - (fl.solid ? fl.y : -1.6) > 3 && !S.reduceMotion) { slowmo = 0.5; air.slow = true; }
+  } else if (air.t > 0) {
+    if (air.t > 0.8 && air.from) {
+      const dist = Math.hypot(v.pos.x - air.from.x, v.pos.z - air.from.z);
+      const pay = Math.round(50 + dist * 4 + air.t * 40);
+      stats.stunts++;
+      addCash(pay);
+      hud.toast(`Stunt jump · ${air.t.toFixed(1)} s · ${Math.round(dist)} m  +$${pay}`, 1800);
+    }
+    air.t = 0; air.slow = false;
+  }
+  if (v.drifting && v.speed > 10) { drift.t += dt; drift.pts += v.speed * dt; drift.gap = 0; }
+  else if (drift.t > 0) {
+    drift.gap += dt;
+    if (drift.gap > 0.4) {
+      if (drift.t > 1.2) {
+        const pay = Math.round(drift.pts / 3);
+        addCash(pay);
+        hud.toast(`Drift ${drift.t.toFixed(1)} s  +$${pay}`, 1200);
+      }
+      drift.t = 0; drift.pts = 0;
+    }
+  }
+  if (v.health < 40 && Math.random() < dt * (v.health < 15 ? 30 : 12)) {
+    const fx = Math.sin(v.heading) * 1.6, fz = Math.cos(v.heading) * 1.6;
+    particles.smoke(v.pos.x + fx, v.pos.y + 1, v.pos.z + fz);
+  }
+  $('#hud-boost').style.width = `${Math.round(v.boost * 100)}%`;
+  if (wreckT > 0) {
+    wreckT -= dt;
+    if (wreckT <= 0) {
+      fade();
+      exitVehicle();
+      v.repair();
+      v.place(v.home.pos, v.home.heading);
+      hud.toast('Car repaired and back where you found it', 1600);
+    }
+  }
+}
+
+// --- courier jobs (J) ---
+let job = null;
+const jobBeacon = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 300, 16, 1, true).translate(0, 150, 0),
+  new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.3, depthWrite: false, fog: false, side: THREE.DoubleSide }));
+jobBeacon.visible = false;
+scene.add(jobBeacon);
+const STREETS = map.roads.filter((r) => r.n && r.k !== 'footway' && r.k !== 'service');
+function pickSpot(from, minD, maxD) {
+  for (let i = 0; i < 300 && STREETS.length; i++) {
+    const r = STREETS[Math.floor(Math.random() * STREETS.length)];
+    const q = r.p[Math.floor(Math.random() * r.p.length)];
+    const d = Math.hypot(q[0] - from.x, q[1] - from.z);
+    if (d < minD || d > maxD) continue;
+    const fl = W.world.floorAt(q[0], q[1], 3, 0);
+    if (!fl.solid || W.world.pointBlocked(q[0], fl.y + 1, q[1])) continue;
+    return { x: q[0], y: fl.y, z: q[1], name: r.n };
+  }
+  return null;
+}
+function toggleJob() {
+  if (job) { endJob('Job cancelled'); return; }
+  const from = driving ? driving.pos : player.pos;
+  const pick = pickSpot(from, 120, 320);
+  if (!pick) { hud.toast('No jobs nearby right now', 1200); return; }
+  job = { stage: 'pickup', target: pick, time: null };
+  jobBeacon.position.set(pick.x, pick.y, pick.z);
+  jobBeacon.visible = true;
+  $('#job').hidden = false;
+  sound.chime();
+  tip('job', 'Courier job: grab the parcel at the yellow beacon, then deliver it before the clock runs out. Any way is fair.');
+}
+function endJob(msg) {
+  if (!job) return;
+  job = null;
+  jobBeacon.visible = false;
+  $('#job').hidden = true;
+  if (msg) hud.toast(msg, 1600);
+}
+function jobTick(dt, focus) {
+  if (!job) return;
+  const T = job.target;
+  const reach = driving ? 7 : 3.5;
+  if (Math.hypot(focus.x - T.x, focus.z - T.z) < reach && Math.abs(focus.y - T.y) < 4) {
+    if (job.stage === 'pickup') {
+      const drop = pickSpot(T, 380, 900);
+      if (!drop) { endJob('No drop-off found'); return; }
+      const dist = Math.hypot(drop.x - T.x, drop.z - T.z);
+      job = { stage: 'deliver', target: drop, time: Math.round(dist / 7 + 25), dist };
+      jobBeacon.position.set(drop.x, drop.y, drop.z);
+      sound.pickup();
+      hud.toast('Parcel picked up', 1000);
+    } else {
+      const pay = Math.round(150 + job.dist / 3 + job.time * 5);
+      stats.jobs++;
+      addCash(pay);
+      particles.confetti(focus.x, focus.y + 1.5, focus.z);
+      sound.finish();
+      endJob(`Delivered! +$${pay}  ·  J for another job`);
+      return;
+    }
+  }
+  if (job.stage === 'deliver') {
+    job.time -= dt;
+    if (job.time <= 0) { endJob('Too late. Job failed'); return; }
+  }
+  const J = job.target;
+  $('#job-text').textContent = job.stage === 'pickup' ? `Pick up the parcel · ${J.name}` : `Deliver to ${J.name}`;
+  $('#job-time').textContent = job.time == null ? `${Math.round(Math.hypot(focus.x - J.x, focus.z - J.z))} m` : `${Math.ceil(job.time)} s`;
+  $('#job').classList.toggle('urgent', job.time != null && job.time < 15);
+}
+
+// --- waypoint and the full-screen map (Tab) ---
+let waypoint = null;
+const bigmap = new BigMap($('#bigmap'), minimap, (x, z) => {
+  if (waypoint && Math.hypot(waypoint.x - x, waypoint.z - z) < 60) { waypoint = null; return; }
+  const fl = W.world.floorAt(x, z, 400, 0);
+  waypoint = new THREE.Vector3(x, fl.solid ? fl.y : 0, z);
+  sound.click();
+});
+function mapState() {
+  const focus = driving ? driving.pos : player.pos;
+  const marks = [];
+  for (const it of parcels.items) if (!parcels.collected.has(it.i)) marks.push({ x: it.g.position.x, z: it.g.position.z, color: '#ffb347', r: 3 });
+  for (const c of V.cars) if (c !== driving) marks.push({ x: c.pos.x, z: c.pos.z, color: '#2f6f8f', square: true });
+  if (V.plane && V.plane !== driving) marks.push({ x: V.plane.pos.x, z: V.plane.pos.z, color: '#ffffff', r: 4 });
+  const t0 = W.landmarks.bridgeInfo.at(BRIDGE.towers[0], 0);
+  marks.push({ x: 0, z: 0, color: '#1f3440', r: 5, label: D.hubName });
+  marks.push({ x: t0[0], z: t0[1], color: '#c0442c', r: 5, label: D.bridgeName });
+  if (job) marks.push({ x: job.target.x, z: job.target.z, color: '#ffd34d', r: 6, ring: true, label: job.stage === 'pickup' ? 'Pick up' : 'Deliver' });
+  return { focus, heading: driving ? driving.heading : player.facing, marks, waypoint };
+}
+function toggleMap(on = !bigmap.open) {
+  if (on && state !== 'play') return;
+  if (on) {
+    state = 'map';
+    input.enabled = false;
+    sound.silence();
+    if (document.pointerLockElement) document.exitPointerLock();
+    bigmap.show(true, mapState());
+  } else {
+    bigmap.show(false);
+    state = 'play';
+    input.enabled = true;
+    if (driving && driving.kind === 'car') sound.setRadio(radioStation);
+    lockPointer();
+  }
+}
+$('#btn-map').addEventListener('click', () => toggleMap());
+window.addEventListener('resize', () => { if (bigmap.open) bigmap.draw(mapState()); });
+
+// --- place names ---
+const named = new Map();
+for (const r of map.roads) {
+  if (!r.n || r.k === 'service') continue;
+  for (const q of r.p) {
+    const k = `${Math.floor(q[0] / 40)},${Math.floor(q[1] / 40)}`;
+    if (!named.has(k)) named.set(k, []);
+    named.get(k).push([q[0], q[1], r.n]);
+  }
+}
+let areaT = 0, areaName = '', areaShownT = 0, nearWater = false;
+function placeName(p) {
+  const B = W.landmarks.bridge;
+  const dx = p.x - B.sx, dz = p.z - B.sz;
+  const u = dx * B.dx + dz * B.dz, v = dx * B.px + dz * B.pz;
+  if (Math.abs(v) < 28 && u > -BRIDGE.rampLen * 0.5 && u < BRIDGE.centreU + 40) return D.bridgeName;
+  if (Math.hypot(p.x, p.z) < 80) return D.hubName;
+  let best = null, bd = 30 * 30;
+  const cx = Math.floor(p.x / 40), cz = Math.floor(p.z / 40);
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+    for (const q of named.get(`${cx + i},${cz + j}`) || []) {
+      const d = (q[0] - p.x) ** 2 + (q[1] - p.z) ** 2;
+      if (d < bd) { bd = d; best = q[2]; }
+    }
+  }
+  return best;
+}
+
+// --- per-frame open-world tick ---
+const lastFocus = new THREE.Vector3();
+function openWorld(dt, realDt) {
+  const focus = driving ? driving.pos : player.pos;
+  trafficContact(dt);
+  carTricks(dt);
+  jobTick(dt, focus);
+  if (waypoint && Math.hypot(focus.x - waypoint.x, focus.z - waypoint.z) < 20) { waypoint = null; hud.toast('Waypoint reached', 900); sound.chime(); }
+  areaT -= realDt; areaShownT -= realDt;
+  if (areaT <= 0) {
+    areaT = 0.5;
+    const n = placeName(focus);
+    if (n && n !== areaName) {
+      areaName = n;
+      $('#area-name').textContent = n;
+      $('#area-sub').textContent = `${D.name} · San Francisco`;
+      $('#area').classList.add('on');
+      areaShownT = 3;
+    }
+    let w = 0;
+    for (const [ox, oz] of [[40, 0], [-40, 0], [0, 40], [0, -40]]) if (!W.world.floorAt(focus.x + ox, focus.z + oz, focus.y + 5, 0).solid) w++;
+    nearWater = w > 0;
+  }
+  if (areaShownT <= 0) $('#area').classList.remove('on');
+  if (radioToastT > 0) { radioToastT -= realDt; if (radioToastT <= 0) $('#radio').hidden = true; }
+  for (const c of V.cars) c.setLights(sky.lights);
+  const d = lastFocus.distanceTo(focus);
+  if (d < 50) {
+    if (driving && driving.kind === 'car') stats.drive += d;
+    else if (driving) stats.fly += d;
+    else stats.run += d;
+  }
+  lastFocus.copy(focus);
+  statsSave -= realDt;
+  if (statsSave <= 0) { statsSave = 5; store.set('stats', stats); }
+}
+
 // ---------- main loop ----------
 let last = performance.now();
 let elapsed = 0;
@@ -1128,7 +1520,19 @@ function frame(now) {
   sky.apply(realDt, elapsed);
   W.setWindowLights(sky.lights);
   for (const f of W.fogBanks) f.material.color.copy(scene.fog.color).lerp(new THREE.Color(0xffffff), 0.35);
-  traffic.update(dt);
+  const honks = traffic.update(dt, state === 'menu' ? [] : [driving ? driving.pos : player.pos]);
+  for (const h of honks) {
+    const d = Math.hypot(h.x - player.pos.x, h.z - player.pos.z);
+    if (d < 60 && state === 'play') sound.horn(d / 60);
+  }
+  if (state === 'play' || state === 'menu') {
+    const th = [];
+    if (state === 'play') {
+      th.push({ x: player.pos.x, z: player.pos.z, vx: player.vel.x, vz: player.vel.z, r: 0.6 });
+      if (driving && driving.kind === 'car') th.push({ x: driving.pos.x, z: driving.pos.z, vx: driving.vel.x, vz: driving.vel.z, r: 2.2 });
+    }
+    peds.update(dt, state === 'menu' ? camera.position : (driving ? driving.pos : player.pos), th, elapsed);
+  }
   gulls.update(dt, elapsed);
   particles.update(dt);
   details.update(state === 'menu' ? camera.position : (driving ? driving.pos : player.pos), sky.lights, elapsed);
@@ -1174,13 +1578,22 @@ function frame(now) {
           const back = active ? runner.respawn : player.safe;
           const next = active ? runner.next : null;
           spawnAt(back.clone(), next);
+          fade();
           hud.toast('Splash! Back on dry land', 1400);
         }
-        const near = !active || !active.vehicle ? nearestVehicle() : null;
+        let near = !active || !active.vehicle ? nearestVehicle() : null;
         if (near) {
           const verb = near.kind === 'plane' ? 'fly' : 'drive';
           player.prompt = `Press F to ${verb}`;
           if (input.useHit) enterVehicle(near);
+        } else if (!active) {
+          // Any car in traffic can be borrowed.
+          const tc = traffic.nearest(player.pos.x, player.pos.z, 3.6);
+          if (tc) {
+            near = { kind: 'car' };
+            player.prompt = 'Press F to borrow this car';
+            if (input.useHit) borrowCar(tc);
+          }
         }
         $('#tb-use').hidden = !near;
         $('#tb-use').textContent = near ? (near.kind === 'plane' ? 'Fly' : 'Drive') : 'Drive';
@@ -1212,6 +1625,7 @@ function frame(now) {
           sound.pickup();
           particles.confetti(focus.x, focus.y + 1.5, focus.z);
           hud.toast(`Postcard ${parcels.count} / ${parcels.total} · ${parcels.spots[got][3]}`, 1800);
+          addCash(250);
         }
       }
     }
@@ -1223,9 +1637,10 @@ function frame(now) {
     if (state !== 'paused') {
       if (driving) {
         const plane = driving.kind === 'plane';
+        const cm = CAM_MODES[camMode];
         rig.updateChase(dt, driving.pos, driving.heading, driving.speed, look, plane
-          ? { height: 3.2, dist: 15, speedDist: 0.12, maxExtra: 8, pitch: 0.18, fovScale: 0.45, roll: driving.roll }
-          : { height: 1.9, dist: 7.5, speedDist: 0.08, maxExtra: 4, pitch: 0.16, fovScale: 0.6 });
+          ? { height: 3.2 * cm.h, dist: 15 * cm.d, speedDist: 0.12, maxExtra: 8, pitch: 0.18, fovScale: 0.45, roll: driving.roll }
+          : { height: 1.9 * cm.h, dist: 7.5 * cm.d, speedDist: 0.08, maxExtra: 4, pitch: 0.16 * cm.p, fovScale: 0.6 });
       } else if (player.mode === 'chute') {
         rig.updateChase(dt, player.pos, player.facing, player.speed, look,
           { height: 2.6, dist: 8.5, speedDist: 0.12, maxExtra: 3, pitch: 0.28, fovScale: 0.6, roll: player.chute ? player.chute.bank : 0 });
@@ -1238,7 +1653,8 @@ function frame(now) {
     speed3 = driving ? Math.abs(driving.speed) : (player.mode === 'zip' ? player.zip.speed : player.vel.length());
     hud.update({
       // Free roam: the pointer leads to the nearest postcard you haven't found.
-      runner, camera, next: runner.next || (!active && state === 'play' ? (parcels.nearestUncollected(focus) || {}).pos || null : null), focus,
+      runner, camera, next: runner.next || (!active && state === 'play'
+        ? (job ? jobBeacon.position : waypoint || (parcels.nearestUncollected(focus) || {}).pos || null) : null), focus,
       speed: driving ? Math.abs(driving.speed) : (player.mode === 'zip' ? player.zip.speed : player.speed),
       alt: focus.y,
       throttle: driving && driving.kind === 'plane' ? driving.throttle : null,
@@ -1276,6 +1692,9 @@ function frame(now) {
     }
     updateTips(realDt);
     updateKeyHints();
+    if (state === 'play') openWorld(dt, realDt);
+    sound.radioTick();
+    sound.ambience(realDt, state === 'play' || state === 'countdown', nearWater);
   }
 
   // Speed lines when moving fast.
@@ -1356,5 +1775,5 @@ if (/\.github\.io$/.test(location.hostname)) {
 // Handy for testing from the console.
 window.__fcr = { sun,
   W, player, rig, courses, runner, startCourse, startFree, input, camera, renderer, scene, V,
-  get countdown() { return countdown; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
+  get countdown() { return countdown; }, get job() { return job; }, toggleJob, toggleMap, borrowCar, peds, bigmap, addCash, get cash() { return cash; }, combo, D, tour, menuAt: (t) => { menuT = t; }, details, enterVehicle, exitVehicle, sound, particles, ghost, recorder, parcels, sky, S, applySettings, traffic, finish,
 };

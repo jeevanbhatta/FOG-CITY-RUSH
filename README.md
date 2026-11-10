@@ -55,6 +55,15 @@ Small touches: switching tabs pauses a run, a quick restart has a 1.5 second cou
 shows the next medal you're chasing, the results say how far off the next medal you were, and in
 free roam the pointer leads to the nearest postcard you haven't found.
 
+## Open world
+
+Free roam is a small open city: borrow any car in traffic (F), use nitro (Shift), the horn (G) and
+the radio (Q, two generated stations), and cycle the camera (V). Traffic brakes for you and honks,
+pedestrians step aside, and bumps dent your car until it's wrecked. Tab opens a full map where a
+click sets a waypoint. Press J for a courier job: pick up a parcel, then deliver it against the
+clock. Cash comes from jobs, stunt jumps, drifts, near misses, postcards and new medals, and the
+menu keeps lifetime stats. See [docs/enhancements.md](docs/enhancements.md) for the full list.
+
 ## Style and momentum
 
 Chain moves without stalling (wall runs, wall jumps, slides, long jumps, rolls, vaults, ziplines,

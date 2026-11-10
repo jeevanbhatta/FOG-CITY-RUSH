@@ -59,6 +59,11 @@ export class Car {
     this.drifting = false;
     this.wheelSpin = 0;
     this.impact = 0;
+    this.health = 100;   // knocks wear it down; at zero the car is wrecked
+    this.boost = 1;      // nitro tank, 0..1
+    this.boosting = false;
+    this.braking = false;
+    this.color = color;
     this.mesh = buildCarMesh(color);
     scene.add(this.mesh);
     this.sync(0);
@@ -73,6 +78,26 @@ export class Car {
     this.heading = heading;
     this.steer = 0;
     this.sync(0);
+  }
+
+  repair() {
+    this.health = 100;
+    this.boost = 1;
+    this.mesh.userData.paint.color.set(this.color);
+  }
+
+  // Dent the car. Paint darkens as it wears.
+  damage(n) {
+    this.health = Math.max(0, this.health - n);
+    const k = 0.45 + 0.55 * (this.health / 100);
+    this.mesh.userData.paint.color.set(this.color).multiplyScalar(k);
+  }
+
+  // Headlights at dusk, brake lights when slowing (and dimly at night).
+  setLights(night) {
+    const u = this.mesh.userData;
+    u.lamp.emissiveIntensity = 0.6 + night * 2.4;
+    u.tail.emissiveIntensity = this.braking ? 2.2 : 0.25 + night * 0.9;
   }
 
   update(dt, ctl, world) {
@@ -90,11 +115,17 @@ export class Car {
     let fs = this.vel.x * sh + this.vel.z * ch;
     let lat = this.vel.x * rx + this.vel.z * rz;
     const thr = ctl.throttle, steerIn = ctl.steer;
+    // Nitro: hold boost with throttle to dump the tank into a burst of speed.
+    this.boosting = !!ctl.boost && this.boost > 0.02 && thr > 0 && this.onGround;
+    if (this.boosting) { this.boost = Math.max(0, this.boost - 0.32 * h); fs += 15 * h; }
+    else this.boost = Math.min(1, this.boost + 0.08 * h);
+    this.braking = (thr < 0 && fs > 0.5) || (thr > 0 && fs < -0.5) || !!ctl.handbrake;
+    const top = this.boosting ? C.max * 1.35 : C.max;
 
     if (this.onGround) {
       if (thr > 0) {
         if (fs < -0.5) fs += C.brake * thr * h;
-        else if (fs < C.max) fs += C.accel * thr * (1 - Math.max(0, fs) / (C.max * 1.15)) * h;
+        else if (fs < top) fs += C.accel * thr * (1 - Math.max(0, fs) / (top * 1.15)) * h;
       } else if (thr < 0) {
         if (fs > 0.5) fs += C.brake * thr * h;
         else if (fs > -C.reverseMax) fs += C.accel * 0.7 * thr * h;
@@ -165,6 +196,7 @@ function buildCarMesh(color) {
   const glass = new THREE.MeshStandardMaterial({ color: 0x24333d, roughness: 0.15, metalness: 0.4 });
   const tyre = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.9 });
   const lamp = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff1c4, emissiveIntensity: 0.6 });
+  const tail = new THREE.MeshStandardMaterial({ color: 0x8a1a14, emissive: 0xff2a1a, emissiveIntensity: 0.25 });
   const body = new THREE.Group();
   body.position.y = 0.0;
   g.add(body);
@@ -183,6 +215,8 @@ function buildCarMesh(color) {
   box(0.4, 0.18, 0.06, lamp, -0.62, 0.82, 2.11);
   box(0.4, 0.18, 0.06, lamp, 0.62, 0.82, 2.11);
   box(1.2, 0.08, 0.5, white, 0, 1.7, -0.6); // roof sign
+  box(0.42, 0.16, 0.06, tail, -0.62, 0.84, -2.11);
+  box(0.42, 0.16, 0.06, tail, 0.62, 0.84, -2.11);
   const wheels = [], front = [];
   for (const [x, z] of [[-0.95, 1.35], [0.95, 1.35], [-0.95, -1.35], [0.95, -1.35]]) {
     const pivot = new THREE.Group();
@@ -197,7 +231,7 @@ function buildCarMesh(color) {
     wheels.push(spin);
     if (z > 0) front.push(pivot);
   }
-  g.userData = { wheels, front, body };
+  g.userData = { wheels, front, body, paint, lamp, tail };
   return g;
 }
 

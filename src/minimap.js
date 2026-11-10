@@ -1,6 +1,6 @@
 // Corner minimap: the city pre-drawn once, then rotated so "up" is wherever the camera looks.
 
-const SCALE = 3; // metres per pixel in the pre-drawn map
+export const SCALE = 3; // metres per pixel in the pre-drawn map
 
 export class Minimap {
   constructor(canvas, map) {

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 
 // Background life: cars cruising the real street network and gulls wheeling over the piers.
-// Purely visual, nothing here collides with the player.
+// Traffic slows for whatever is in its lane (honking if you dawdle), can be borrowed, and
+// reports where each car is so the game can handle bumps and near misses.
 
 const TRAFFIC_COLORS = [0xd8d4cc, 0x2f3a44, 0x8a1f1f, 0x355f7a, 0xc9b26a, 0x6b6f73, 0xf2efe6, 0x1f2a24];
 
@@ -31,7 +32,12 @@ export class Traffic {
     const c = new THREE.Color();
     for (let i = 0; i < this.max && this.routes.length; i++) {
       const route = this.routes[i % this.routes.length];
-      this.cars.push({ route, s: Math.random() * route.len, dir: i % 2 ? 1 : -1, speed: 8 + Math.random() * 6 });
+      const cruise = 8 + Math.random() * 6;
+      this.cars.push({
+        i, route, s: Math.random() * route.len, dir: i % 2 ? 1 : -1, cruise, speed: cruise,
+        color: TRAFFIC_COLORS[i % TRAFFIC_COLORS.length], x: 0, z: 0, fx: 0, fz: 1,
+        taken: 0, blocked: 0, honked: 0, bumped: 0,
+      });
       this.body.setColorAt(i, c.set(TRAFFIC_COLORS[i % TRAFFIC_COLORS.length]));
     }
     this.setCount(count);
@@ -60,9 +66,40 @@ export class Traffic {
     return [p[0][0], p[0][1], 1, 0];
   }
 
-  update(dt) {
+  // Hand a car over to the player: it leaves traffic (and comes back a while later).
+  take(car) {
+    car.taken = 45;
+    return { x: car.x, z: car.z, heading: Math.atan2(car.fx, car.fz), color: car.color };
+  }
+
+  // obstacles: [{x, z}] things traffic should not drive into (you, your car).
+  // Returns honks: [{x, z}] for cars that have been held up a while.
+  update(dt, obstacles = []) {
+    const honks = [];
     for (let i = 0; i < this.count; i++) {
       const car = this.cars[i];
+      if (car.taken > 0) {
+        car.taken -= dt;
+        this.m.makeScale(0, 0, 0);
+        this.body.setMatrixAt(i, this.m);
+        this.cab.setMatrixAt(i, this.m);
+        car.x = car.z = 1e9;
+        continue;
+      }
+      // Brake for anything a few car lengths ahead in the lane; honk if it doesn't move.
+      let want = car.cruise;
+      for (const o of obstacles) {
+        const dx = o.x - car.x, dz = o.z - car.z;
+        const ahead = dx * car.fx + dz * car.fz, side = Math.abs(dx * car.fz - dz * car.fx);
+        if (ahead > 0 && ahead < 16 && side < 2.4) want = Math.min(want, Math.max(0, (ahead - 5) * 0.8));
+      }
+      if (car.bumped > 0) { car.bumped -= dt; want = 0; }
+      car.speed += (want - car.speed) * Math.min(1, dt * (want < car.speed ? 4 : 1.2));
+      if (car.speed < 0.5 && want < 0.5) {
+        car.blocked += dt;
+        car.honked -= dt;
+        if (car.blocked > 1.5 && car.honked <= 0) { honks.push({ x: car.x, z: car.z }); car.honked = 2.5 + Math.random() * 2; }
+      } else car.blocked = 0;
       car.s += car.speed * car.dir * dt;
       if (car.s > car.route.len) { car.s = car.route.len; car.dir = -1; }
       if (car.s < 0) { car.s = 0; car.dir = 1; }
@@ -71,6 +108,7 @@ export class Traffic {
       // Drive on the right-hand side of the road.
       const off = Math.min(3, car.route.w / 4);
       const px = x - fz * off, pz = z + fx * off;
+      car.x = px; car.z = pz; car.fx = fx; car.fz = fz;
       this.q.setFromAxisAngle(this.up, Math.atan2(fx, fz));
       this.m.compose(new THREE.Vector3(px, 0.02, pz), this.q, new THREE.Vector3(1, 1, 1));
       this.body.setMatrixAt(i, this.m);
@@ -78,6 +116,18 @@ export class Traffic {
     }
     this.body.instanceMatrix.needsUpdate = true;
     this.cab.instanceMatrix.needsUpdate = true;
+    return honks;
+  }
+
+  // Nearest car (within r) to a point.
+  nearest(x, z, r) {
+    let best = null, bd = r * r;
+    for (let i = 0; i < this.count; i++) {
+      const c = this.cars[i];
+      const d = (c.x - x) ** 2 + (c.z - z) ** 2;
+      if (d < bd) { bd = d; best = c; }
+    }
+    return best;
   }
 }
 

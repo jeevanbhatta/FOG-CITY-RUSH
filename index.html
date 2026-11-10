@@ -66,6 +66,8 @@
   .btn.big .cta-sub:empty { display: none; }
   .progress { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 800 1rem/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bay); }
   .progress span { display: inline-flex; align-items: center; gap: 6px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.86rem; color: var(--steel); font-variant-numeric: tabular-nums; }
+  .stats b { color: var(--bay); font-weight: 600; }
   .progress i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 
   .block { display: grid; gap: 10px; }
@@ -127,6 +129,42 @@
   @media (max-width: 640px) { body.touch #keys { left: max(16px, env(safe-area-inset-left, 0px)); transform: none; justify-content: flex-start;
     bottom: calc(86px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 210px); }
     body.touch #keys .hint { justify-content: flex-start; } }
+
+  /* Open-world HUD: cash, place names, jobs, radio, nitro */
+  #cash { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(232px + env(safe-area-inset-top, 0px));
+    font: 900 1.7rem/1 var(--display); color: #2f7a4a; text-shadow: 0 1px 0 #fff, 0 0 10px rgba(255,255,255,0.7); font-variant-numeric: tabular-nums; }
+  body.no-minimap #cash { top: calc(56px + env(safe-area-inset-top, 0px)); }
+  #cash.bump { animation: bump 0.3s ease-out; }
+  #area { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(200px + env(safe-area-inset-bottom, 0px));
+    display: grid; justify-items: end; text-align: right; opacity: 0; transition: opacity 0.6s; pointer-events: none; }
+  #area.on { opacity: 1; }
+  #area b { font: 900 1.9rem/0.95 var(--display); text-transform: uppercase; color: #fff; text-shadow: 0 2px 10px rgba(31,52,64,0.6); }
+  #area span { font: 600 0.8rem/1.2 var(--body); letter-spacing: 0.14em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 6px rgba(31,52,64,0.7); }
+  #job { position: absolute; left: 50%; top: calc(86px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: grid; justify-items: center; gap: 2px;
+    background: rgba(31, 52, 64, 0.82); color: #eef2f3; border-radius: 4px; padding: 7px 14px 6px; border-top: 3px solid #ffd34d; text-align: center; }
+  #job .job-k { font: 600 0.68rem/1 var(--body); letter-spacing: 0.16em; text-transform: uppercase; color: #ffd34d; }
+  #job b { font: 800 1.05rem/1.1 var(--display); text-transform: uppercase; letter-spacing: 0.04em; }
+  #job span:last-child { font: 900 1.4rem/1 var(--display); font-variant-numeric: tabular-nums; }
+  #job.urgent span:last-child { color: #ff8a6b; }
+  #radio { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); font: 800 1.2rem/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase;
+    color: #fff; background: rgba(31,52,64,0.7); padding: 7px 12px 6px; border-radius: 3px; }
+  .meter { display: inline-block; width: 64px; height: 10px; border-radius: 5px; background: rgba(31,52,64,0.2); overflow: hidden; vertical-align: middle; }
+  .meter i { display: block; height: 100%; background: linear-gradient(90deg, #2a9df4, #6ee7ff); }
+  #fade { position: fixed; inset: 0; background: #0e1a21; opacity: 0; pointer-events: none; z-index: 9; }
+  #fade.go { animation: fadeblink 0.7s ease-out; }
+  @keyframes fadeblink { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
+  #bigmap { background: #3f5f6c; z-index: 12; }
+  #bigmap canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+  .bm-head { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); display: grid; gap: 2px;
+    background: rgba(236,241,242,0.85); padding: 8px 12px; border-radius: 4px; pointer-events: none; }
+  .bm-head b { font: 900 1.6rem/1 var(--display); text-transform: uppercase; }
+  .bm-head span { font-size: 0.85rem; color: var(--steel); }
+  .bm-legend { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; gap: 6px 14px;
+    background: rgba(236,241,242,0.85); padding: 7px 12px; border-radius: 4px; font-size: 0.85rem; pointer-events: none; }
+  .bm-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; box-shadow: 0 0 0 1px rgba(31,52,64,0.4); }
+  #btn-map { pointer-events: auto; position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: calc(max(16px, env(safe-area-inset-right, 0px)) + 82px);
+    border: 0; background: rgba(255,255,255,0.6); border-radius: 3px; padding: 8px 12px 7px; font: 800 0.95rem/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; }
+  @media (max-width: 640px) { #cash { top: calc(232px + env(safe-area-inset-top, 0px)); font-size: 1.3rem; } #area { bottom: calc(300px + env(safe-area-inset-bottom, 0px)); } #area b { font-size: 1.3rem; } #job { top: calc(150px + env(safe-area-inset-top, 0px)); } }
 
   /* Style combo meter */
   #combo { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: 46%; transform: translateY(-50%); display: grid; justify-items: end; gap: 3px; text-align: right; }
@@ -323,6 +361,7 @@
         <button class="btn ghost" id="btn-settings">Settings</button>
       </div>
       <div class="progress" id="progress" aria-label="Your progress"></div>
+      <div class="stats" id="stats"></div>
     </header>
 
     <div class="block">
@@ -361,6 +400,10 @@
         <div><kbd>Esc</kbd> Pause</div>
         <div><kbd>M</kbd> Minimap · <kbd>F3</kbd> FPS</div>
         <div><kbd>H</kbd> Show or hide the control hints</div>
+        <div><kbd>Tab</kbd> Map · click to set a waypoint</div>
+        <div><kbd>J</kbd> Courier job (free roam)</div>
+        <div><kbd>Shift</kbd> Nitro · <kbd>G</kbd> Horn · <kbd>Q</kbd> Radio</div>
+        <div><kbd>V</kbd> Camera distance</div>
       </div>
       <p class="touch-note">Drag the left side to run (push all the way to sprint), drag the right side to look. Buttons: jump, slide, grab. Walk up to a car or the seaplane and tap Drive or Fly; in the plane, the buttons become throttle up and down.</p>
       <p class="fine">Gamepads work too. Best times, ghosts and postcards are saved on this device.</p>
@@ -432,6 +475,7 @@
     <div class="stat"><b id="hud-alt">0</b><span>Altitude m</span></div>
     <div class="stat" id="stat-thr" hidden><b id="hud-thr">0</b><span>Throttle %</span></div>
     <div class="stat" id="stat-style"><b id="hud-style">0</b><span>Style</span></div>
+    <div class="stat" id="stat-boost" hidden><b><i class="meter"><i id="hud-boost"></i></i></b><span>Nitro</span></div>
   </div>
   <div id="combo" hidden aria-live="off">
     <div class="cb-mult" id="cb-mult"></div>
@@ -440,9 +484,14 @@
     <div class="cb-pts" id="cb-pts"></div>
   </div>
   <button id="btn-pause" aria-label="Pause">Pause</button>
+  <button id="btn-map" aria-label="Map">Map</button>
   <canvas id="minimap" width="300" height="300" aria-hidden="true"></canvas>
   <div id="tip" hidden></div>
   <div id="keys" aria-label="Controls"></div>
+  <div id="cash" aria-label="Cash">$0</div>
+  <div id="area" aria-live="polite"><b id="area-name"></b><span id="area-sub"></span></div>
+  <div id="job" hidden><span class="job-k">Courier job</span><b id="job-text"></b><span id="job-time"></span></div>
+  <div id="radio" hidden></div>
   <div id="toast"></div>
   <div id="prompt" hidden></div>
   <div id="countdown" hidden></div>
@@ -458,6 +507,13 @@
     <button data-btn="jump" id="tb-jump">Jump</button>
   </div>
 </div>
+
+<section id="bigmap" class="screen" hidden aria-label="Map">
+  <canvas></canvas>
+  <div class="bm-head"><b>Map</b><span>Click to set a waypoint · Tab or Esc to close</span></div>
+  <div class="bm-legend"><span><i style="background:#ff6a2b"></i>You</span><span><i style="background:#ffd34d"></i>Waypoint</span><span><i style="background:#ffb347"></i>Postcard</span><span><i style="background:#2f6f8f"></i>Car</span><span><i style="background:#fff"></i>Seaplane</span></div>
+</section>
+<div id="fade"></div>
 
 <div id="attribution"></div>
 <div id="perf" hidden></div>
